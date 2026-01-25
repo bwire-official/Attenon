@@ -1,0 +1,108 @@
+.welcome-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #ffffff;
+    padding: 40px 20px;
+}
+
+.welcome-content {
+    text-align: center;
+    color: #18191b;
+    max-width: 600px;
+    width: 100%;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.logo-container {
+    margin-bottom: 40px;
+}
+
+.logo {
+    width: 180px;
+    height: 180px;
+    object-fit: contain;
+}
+
+.welcome-subtitle {
+    font-size: 20px;
+    margin-bottom: 16px;
+    color: #62636a;
+    font-weight: 500;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.welcome-description {
+    font-size: 16px;
+    margin-bottom: 40px;
+    color: #7a7c85;
+    font-weight: 400;
+    line-height: 1.6;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.welcome-button {
+    background: #18191b;
+    color: white;
+    border: none;
+    padding: 16px 48px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(24, 25, 27, 0.15);
+    font-family: 'Montserrat', sans-serif;
+    letter-spacing: 0.3px;
+}
+
+.welcome-button:hover {
+    background: #313235;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(24, 25, 27, 0.2);
+}
+
+.welcome-button:active {
+    transform: translateY(0);
+    background: #494b50;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .welcome-subtitle {
+        font-size: 18px;
+    }
+
+    .welcome-description {
+        font-size: 15px;
+    }
+
+    .logo {
+        width: 160px;
+        height: 160px;
+    }
+}
+
+@media (max-width: 480px) {
+    .welcome-button {
+        padding: 14px 40px;
+        font-size: 15px;
+    }
+
+    .logo {
+        width: 160px;
+        height: 160px;
+    }
+}

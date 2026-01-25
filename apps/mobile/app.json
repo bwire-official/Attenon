@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Attenon",
+    "slug": "mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "main": "index.js",
+    "icon": "./assets/attenon logo.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/attenon logo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/attenon logo.png"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@attenon/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node dev.js",
+    "start": "node dev.js",
+    "test": ".\\venv\\Scripts\\python.exe -m pytest",
+    "format": ".\\venv\\Scripts\\python.exe -m black app/",
+    "lint": ".\\venv\\Scripts\\python.exe -m ruff check app/",
+    "lint:fix": ".\\venv\\Scripts\\python.exe -m ruff check --fix app/"
+  },
+  "description": "FastAPI backend for Attenon attendance management system"
+}

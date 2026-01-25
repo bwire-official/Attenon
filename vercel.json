@@ -1,6 +1,18 @@
 {
-  "buildCommand": "cd apps/student-portal && npm install && npm run build",
-  "outputDirectory": "apps/student-portal/dist",
-  "installCommand": "npm install --prefix apps/student-portal",
-  "framework": "vite"
+  "version": 2,
+  "builds": [
+    {
+      "src": "apps/student-portal/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/apps/student-portal/$1"
+    }
+  ]
 }

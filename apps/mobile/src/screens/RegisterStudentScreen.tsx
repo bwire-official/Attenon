@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenWrapper } from '../components/ScreenWrapper';
-import { Input } from '../components/Input';
-import { Button } from '../components/Button';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
@@ -19,19 +16,17 @@ interface StudentRegistrationData {
     password: string;
 }
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScreenProps) => {
-    const { colors, isDark } = useTheme();
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
     const [step, setStep] = useState(1);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(false);
-    const isSmallScreen = SCREEN_HEIGHT < 700;
-    const isAndroid = Platform.OS === 'android';
 
     const validateStep1 = (): boolean => {
         const newErrors: Record<string, string> = {};
@@ -94,117 +89,111 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
         return 'Create Password';
     };
 
-    const getStepSubtitle = (): string => {
-        if (step === 1) return 'Enter your email to get started';
-        return 'Create a secure password for your account';
-    };
-
     return (
-        <ScreenWrapper style={{ paddingHorizontal: 0 }}>
-            <View style={[styles.content, { backgroundColor: colors.background }]}>
-                <View style={styles.header}>
-                    <TouchableOpacity 
-                        onPress={handleBack}
-                        style={styles.backButton}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons 
-                            name="arrow-back" 
-                            size={24} 
-                            color={isDark ? colorPalette.grey[100] : colors.text.primary} 
-                        />
-                    </TouchableOpacity>
-                </View>
-
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-                    style={{ flex: 1 }}
+        <View style={styles.container}>
+            {/* Header Section */}
+            <View style={[styles.headerSection, { 
+                backgroundColor: colors.black,
+                paddingTop: insets.top + layout.spacing.md 
+            }]}>
+                <TouchableOpacity 
+                    onPress={handleBack}
+                    style={styles.backButton}
+                    activeOpacity={0.7}
                 >
-                    <ScrollView 
-                        contentContainerStyle={[
-                            styles.scrollContent,
-                            isAndroid && styles.scrollContentAndroid,
-                            { paddingBottom: Math.max(insets.bottom, layout.spacing.lg) }
-                        ]} 
-                        showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
-                    >
-                        <View style={[
-                            styles.logoContainer, 
-                            isSmallScreen && styles.logoContainerSmall,
-                            isAndroid && styles.logoContainerAndroid
-                        ]}>
-                            <View style={[styles.iconContainer, { backgroundColor: isDark ? colorPalette.grey[900] : colorPalette.frozenLake[100] }]}>
-                                <Ionicons 
-                                    name="school" 
-                                    size={48} 
-                                    color={isDark ? colorPalette.grey[100] : colors.primary} 
+                    <Ionicons 
+                        name="arrow-back" 
+                        size={24} 
+                        color={colors.white}
+                    />
+                </TouchableOpacity>
+                <View style={styles.headerTextContainer}>
+                    <Text style={[styles.helloText, { color: colors.white }]}>{step === 1 ? 'Create' : 'Create'}</Text>
+                    <Text style={[styles.signInText, { color: colors.white }]}>{step === 1 ? 'Account' : 'Password'}</Text>
+                </View>
+            </View>
+
+            {/* Form Section */}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                style={[styles.formSection, { backgroundColor: colors.white }]}
+            >
+                <ScrollView 
+                    contentContainerStyle={[
+                        styles.formContent,
+                        { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
+                    ]}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {step === 1 ? (
+                        <>
+                            {/* Email Input */}
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address or Reg Number</Text>
+                                <TextInput
+                                    style={[styles.textInput, { 
+                                        color: colorPalette.grey[900],
+                                        borderBottomColor: errors.email ? '#EF4444' : colorPalette.grey[300],
+                                    }]}
+                                    value={email}
+                                    onChangeText={(text) => {
+                                        setEmail(text);
+                                        if (errors.email) {
+                                            setErrors({ ...errors, email: '' });
+                                        }
+                                    }}
+                                    placeholder="Enter your email or reg number"
+                                    placeholderTextColor={colorPalette.grey[400]}
+                                    keyboardType="default"
+                                    autoCapitalize="none"
+                                    autoComplete="email"
+                                />
+                                {errors.email && (
+                                    <Text style={styles.errorText}>{errors.email}</Text>
+                                )}
+                            </View>
+
+                            {/* Continue Button */}
+                            <TouchableOpacity
+                                style={[styles.continueButton, { 
+                                    backgroundColor: colors.black,
+                                    opacity: !email.trim() ? 0.5 : 1,
+                                }]}
+                                onPress={handleNext}
+                                disabled={!email.trim()}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={[styles.continueButtonText, { color: colors.white }]}>Continue</Text>
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <>
+                            {/* Email Display (Read-only) */}
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address or Reg Number</Text>
+                                <TextInput
+                                    style={[styles.textInput, { 
+                                        color: colorPalette.grey[500],
+                                        borderBottomColor: colorPalette.grey[300],
+                                    }]}
+                                    value={email}
+                                    placeholder="Enter your email or reg number"
+                                    placeholderTextColor={colorPalette.grey[400]}
+                                    editable={false}
                                 />
                             </View>
-                            <Text style={[
-                                styles.title, 
-                                isSmallScreen && styles.titleSmall,
-                                isAndroid && styles.titleAndroid,
-                                { color: colors.text.primary }
-                            ]}>{getStepTitle()}</Text>
-                            <Text style={[
-                                styles.subtitle, 
-                                isSmallScreen && styles.subtitleSmall,
-                                isAndroid && styles.subtitleAndroid,
-                                { color: colors.text.secondary }
-                            ]}>
-                                {getStepSubtitle()}
-                            </Text>
-                            <View style={styles.stepIndicator}>
-                                <View style={[styles.stepDot, styles.stepDotActive, { backgroundColor: colors.primary }]} />
-                                <View style={[styles.stepLine, { backgroundColor: step >= 2 ? colors.primary : colors.border }]} />
-                                <View style={[styles.stepDot, step >= 2 && styles.stepDotActive, { backgroundColor: step >= 2 ? colors.primary : colors.border }]} />
-                            </View>
-                        </View>
 
-                        <View style={styles.form}>
-                            {step === 1 ? (
-                                <>
-                                    <Input
-                                        label="Email Address"
-                                        value={email}
-                                        onChangeText={(text) => {
-                                            setEmail(text);
-                                            if (errors.email) {
-                                                setErrors({ ...errors, email: '' });
-                                            }
-                                        }}
-                                        placeholder="Enter your email"
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoComplete="email"
-                                        icon="mail-outline"
-                                        error={errors.email}
-                                    />
-
-                                    <Button
-                                        title="Continue"
-                                        onPress={handleNext}
-                                        disabled={!email.trim()}
-                                        style={styles.nextButton}
-                                    />
-                                </>
-                            ) : (
-                                <>
-                                    <Input
-                                        label="Email Address"
-                                        value={email}
-                                        placeholder="Enter your email"
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoComplete="email"
-                                        icon="mail-outline"
-                                        editable={false}
-                                    />
-
-                                    <Input
-                                        label="Password"
+                            {/* Password Input */}
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Password</Text>
+                                <View style={styles.passwordContainer}>
+                                    <TextInput
+                                        style={[styles.textInput, { 
+                                            flex: 1,
+                                            color: colorPalette.grey[900],
+                                            borderBottomColor: errors.password ? '#EF4444' : colorPalette.grey[300],
+                                        }]}
                                         value={password}
                                         onChangeText={(text) => {
                                             setPassword(text);
@@ -216,15 +205,38 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                             }
                                         }}
                                         placeholder="Enter your password"
-                                        secureTextEntry
+                                        placeholderTextColor={colorPalette.grey[400]}
+                                        secureTextEntry={!showPassword}
                                         autoCapitalize="none"
                                         autoComplete="password-new"
-                                        icon="lock-closed-outline"
-                                        error={errors.password}
                                     />
+                                    <TouchableOpacity
+                                        onPress={() => setShowPassword(!showPassword)}
+                                        style={styles.eyeIcon}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons
+                                            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                            size={20}
+                                            color={colorPalette.grey[600]}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                                {errors.password && (
+                                    <Text style={styles.errorText}>{errors.password}</Text>
+                                )}
+                            </View>
 
-                                    <Input
-                                        label="Confirm Password"
+                            {/* Confirm Password Input */}
+                            <View style={styles.inputGroup}>
+                                <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Confirm Password</Text>
+                                <View style={styles.passwordContainer}>
+                                    <TextInput
+                                        style={[styles.textInput, { 
+                                            flex: 1,
+                                            color: colorPalette.grey[900],
+                                            borderBottomColor: errors.confirmPassword ? '#EF4444' : colorPalette.grey[300],
+                                        }]}
                                         value={confirmPassword}
                                         onChangeText={(text) => {
                                             setConfirmPassword(text);
@@ -233,143 +245,167 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                             }
                                         }}
                                         placeholder="Confirm your password"
-                                        secureTextEntry
+                                        placeholderTextColor={colorPalette.grey[400]}
+                                        secureTextEntry={!showConfirmPassword}
                                         autoCapitalize="none"
                                         autoComplete="password-new"
-                                        icon="lock-closed-outline"
-                                        error={errors.confirmPassword}
                                     />
-
-                                    <View style={styles.passwordHint}>
-                                        <Ionicons 
-                                            name="information-circle-outline" 
-                                            size={16} 
-                                            color={colors.text.secondary} 
+                                    <TouchableOpacity
+                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        style={styles.eyeIcon}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Ionicons
+                                            name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                                            size={20}
+                                            color={colorPalette.grey[600]}
                                         />
-                                        <Text style={[styles.passwordHintText, { color: colors.text.secondary }]}>
-                                            Password must be at least 8 characters long
-                                        </Text>
-                                    </View>
+                                    </TouchableOpacity>
+                                </View>
+                                {errors.confirmPassword && (
+                                    <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                                )}
+                            </View>
 
-                                    <Button
-                                        title="Create Account"
-                                        onPress={handleRegister}
-                                        loading={loading}
-                                        disabled={!password.trim() || !confirmPassword.trim()}
-                                        style={styles.registerButton}
-                                    />
-                                </>
-                            )}
-                        </View>
-                    </ScrollView>
-                </KeyboardAvoidingView>
-            </View>
-        </ScreenWrapper>
+                            {/* Password Hint */}
+                            <View style={styles.passwordHint}>
+                                <Ionicons 
+                                    name="information-circle-outline" 
+                                    size={16} 
+                                    color={colorPalette.grey[600]} 
+                                />
+                                <Text style={[styles.passwordHintText, { color: colorPalette.grey[600] }]}>
+                                    Password must be at least 8 characters long
+                                </Text>
+                            </View>
+
+                            {/* Create Account Button */}
+                            <TouchableOpacity
+                                style={[styles.createButton, { 
+                                    backgroundColor: colors.black,
+                                    opacity: (!password.trim() || !confirmPassword.trim() || loading) ? 0.5 : 1,
+                                }]}
+                                onPress={handleRegister}
+                                disabled={!password.trim() || !confirmPassword.trim() || loading}
+                                activeOpacity={0.8}
+                            >
+                                {loading ? (
+                                    <Text style={[styles.createButtonText, { color: colors.white }]}>Creating...</Text>
+                                ) : (
+                                    <Text style={[styles.createButtonText, { color: colors.white }]}>CREATE ACCOUNT</Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
+                    )}
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    content: {
+    container: {
         flex: 1,
     },
-    header: {
-        paddingTop: layout.spacing.md,
-        paddingHorizontal: layout.spacing.md,
+    headerSection: {
+        paddingHorizontal: layout.spacing.xl,
+        paddingBottom: layout.spacing.xxl * 2,
+        overflow: 'hidden',
     },
     backButton: {
         width: 40,
         height: 40,
         justifyContent: 'center',
         alignItems: 'flex-start',
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: layout.spacing.xl,
-        paddingTop: layout.spacing.xl,
-        paddingBottom: layout.spacing.lg,
-    },
-    scrollContentAndroid: {
-        paddingTop: layout.spacing.lg,
-        paddingHorizontal: layout.spacing.lg,
-    },
-    logoContainer: {
-        alignItems: 'center',
         marginBottom: layout.spacing.xl,
     },
-    logoContainerSmall: {
-        marginBottom: layout.spacing.lg,
+    headerTextContainer: {
+        marginTop: layout.spacing.md,
     },
-    logoContainerAndroid: {
-        marginBottom: layout.spacing.md,
-    },
-    iconContainer: {
-        width: 100,
-        height: 100,
-        borderRadius: layout.borderRadius.xl,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: layout.spacing.lg,
-    },
-    title: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        marginBottom: layout.spacing.xs,
-    },
-    titleSmall: {
-        fontSize: 24,
-    },
-    titleAndroid: {
-        fontSize: 22,
+    helloText: {
+        fontSize: 32,
+        fontFamily: 'Montserrat_300Light',
         marginBottom: layout.spacing.xs / 2,
     },
-    subtitle: {
-        fontSize: 16,
-        textAlign: 'center',
-        marginBottom: layout.spacing.md,
+    signInText: {
+        fontSize: 32,
+        fontFamily: 'Montserrat_700Bold',
     },
-    subtitleSmall: {
+    formSection: {
+        flex: 1,
+        marginTop: -35,
+        borderTopLeftRadius: 50,
+        borderTopRightRadius: 50,
+        overflow: 'hidden',
+    },
+    formContent: {
+        flexGrow: 1,
+        paddingHorizontal: layout.spacing.xl,
+        paddingTop: layout.spacing.xxl * 2,
+    },
+    inputGroup: {
+        marginBottom: layout.spacing.xl,
+    },
+    inputLabel: {
         fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
+        marginBottom: layout.spacing.sm,
     },
-    subtitleAndroid: {
-        fontSize: 13,
+    textInput: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_400Regular',
+        paddingVertical: layout.spacing.sm,
+        borderBottomWidth: 1,
     },
-    stepIndicator: {
+    passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: layout.spacing.sm,
+        borderBottomWidth: 1,
     },
-    stepDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+    eyeIcon: {
+        padding: layout.spacing.xs,
+        marginLeft: layout.spacing.xs,
     },
-    stepDotActive: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+    errorText: {
+        fontSize: 12,
+        fontFamily: 'Montserrat_400Regular',
+        color: '#EF4444',
+        marginTop: layout.spacing.xs,
     },
-    stepLine: {
-        width: 40,
-        height: 2,
-        marginHorizontal: layout.spacing.xs,
+    continueButton: {
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: layout.spacing.xl,
+        marginBottom: layout.spacing.xxl,
     },
-    form: {
-        marginTop: layout.spacing.md,
-    },
-    nextButton: {
-        marginTop: layout.spacing.md,
-    },
-    registerButton: {
-        marginTop: layout.spacing.md,
+    continueButtonText: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_700Bold',
+        letterSpacing: 1.2,
     },
     passwordHint: {
         flexDirection: 'row',
         alignItems: 'center',
         marginTop: layout.spacing.sm,
-        marginBottom: layout.spacing.md,
+        marginBottom: layout.spacing.xl,
     },
     passwordHintText: {
         fontSize: 12,
+        fontFamily: 'Montserrat_400Regular',
         marginLeft: layout.spacing.xs,
+    },
+    createButton: {
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: layout.spacing.xxl,
+    },
+    createButtonText: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_700Bold',
+        letterSpacing: 1.2,
     },
 });

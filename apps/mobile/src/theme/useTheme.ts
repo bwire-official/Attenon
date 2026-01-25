@@ -1,5 +1,6 @@
 import { useColorScheme } from 'react-native';
 import { lightColors, darkColors } from './colors';
+import { typography } from './typography';
 
 export const useTheme = () => {
     const colorScheme = useColorScheme();
@@ -10,6 +11,7 @@ export const useTheme = () => {
         colors: isDark ? darkColors : lightColors,
         isDark,
         colorScheme: colorScheme || 'light',
+        typography,
     };
 };
 

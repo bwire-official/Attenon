@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
         // Font size set inline
     },
     name: {
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     notificationButton: {
         justifyContent: 'center',
@@ -307,10 +307,10 @@ const styles = StyleSheet.create({
     },
     badgeText: {
         fontSize: 10,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     welcomeText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     statsCard: {
         borderRadius: layout.borderRadius.lg,
@@ -346,12 +346,12 @@ const styles = StyleSheet.create({
         marginBottom: layout.spacing.sm,
     },
     statValue: {
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginBottom: layout.spacing.xs / 2,
         letterSpacing: -0.5,
     },
     statLabel: {
-        fontWeight: '500',
+        fontFamily: 'Montserrat_500Medium',
         textAlign: 'center',
     },
     gridContainer: {
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     menuButtonText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
         textAlign: 'center',
     },
 });

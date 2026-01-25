@@ -5,34 +5,45 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { resetPassword } from '../services/auth';
 
-interface InstructorLoginScreenProps {
-    onLogin?: () => void;
+interface ForgotPasswordScreenProps {
     onBack?: () => void;
-    onForgotPassword?: () => void;
+    onCodeSent?: (email: string) => void;
 }
 
-export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: InstructorLoginScreenProps) => {
-    const { colors, isDark } = useTheme();
+export const ForgotPasswordScreen = ({ onBack, onCodeSent }: ForgotPasswordScreenProps) => {
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    const [emailOrStaffId, setEmailOrStaffId] = useState('');
-    const [password, setPassword] = useState('');
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleLogin = () => {
-        if (!emailOrStaffId.trim() || !password.trim()) {
-            setError('Please enter both email/staff ID and password');
+    const handleSendCode = async () => {
+        if (!email.trim()) {
+            setError('Please enter your email address');
             return;
         }
-        
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email.trim())) {
+            setError('Please enter a valid email address');
+            return;
+        }
+
         setLoading(true);
         setError(null);
-        // Simulate API call
-        setTimeout(() => {
-            setLoading(false);
-            onLogin?.();
-        }, 1500);
+
+        const result = await resetPassword(email.trim());
+
+        setLoading(false);
+
+        if (result.success) {
+            // Navigate directly to code verification screen
+            onCodeSent?.(email.trim());
+        } else {
+            setError(result.error || 'Failed to send reset code. Please try again.');
+        }
     };
 
     return (
@@ -54,8 +65,8 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                     />
                 </TouchableOpacity>
                 <View style={styles.headerTextContainer}>
-                    <Text style={[styles.helloText, { color: colors.white }]}>Hello</Text>
-                    <Text style={[styles.signInText, { color: colors.white }]}>Sign In</Text>
+                    <Text style={[styles.helloText, { color: colors.white }]}>Forgot</Text>
+                    <Text style={[styles.signInText, { color: colors.white }]}>Password?</Text>
                 </View>
             </View>
 
@@ -86,75 +97,45 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                         </View>
                     )}
 
-                    {/* Email/Staff ID Input */}
+                    <Text style={[styles.descriptionText, { color: colorPalette.grey[600] }]}>
+                        Enter your email address and we'll send you a code to reset your password
+                    </Text>
+
+                    {/* Email Input */}
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email or Staff ID</Text>
+                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address</Text>
                         <TextInput
                             style={[styles.textInput, { 
                                 color: colorPalette.grey[900],
                                 borderBottomColor: colorPalette.grey[300],
                             }]}
-                            value={emailOrStaffId}
+                            value={email}
                             onChangeText={(text) => {
-                                setEmailOrStaffId(text);
+                                setEmail(text);
                                 setError(null);
                             }}
-                            placeholder="Enter your email or staff ID"
+                            placeholder="Enter your email"
                             placeholderTextColor={colorPalette.grey[400]}
-                            keyboardType="default"
+                            keyboardType="email-address"
                             autoCapitalize="none"
+                            autoComplete="email"
                         />
                     </View>
 
-                    {/* Password Input */}
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Password</Text>
-                        <View style={styles.passwordContainer}>
-                            <TextInput
-                                style={[styles.textInput, { 
-                                    flex: 1,
-                                    color: colorPalette.grey[900],
-                                    borderBottomColor: colorPalette.grey[300],
-                                }]}
-                                value={password}
-                                onChangeText={(text) => {
-                                    setPassword(text);
-                                    setError(null);
-                                }}
-                                placeholder="••••••"
-                                placeholderTextColor={colorPalette.grey[400]}
-                                secureTextEntry
-                                autoCapitalize="none"
-                                autoComplete="password"
-                            />
-                        </View>
-                    </View>
-
-                    {/* Forgot Password */}
-                    <TouchableOpacity 
-                        style={styles.forgotPassword}
-                        onPress={onForgotPassword}
-                        activeOpacity={0.7}
-                    >
-                        <Text style={[styles.forgotPasswordText, { color: colorPalette.grey[600] }]}>
-                            Forget password?
-                        </Text>
-                    </TouchableOpacity>
-
-                    {/* Sign In Button */}
+                    {/* Send Code Button */}
                     <TouchableOpacity
-                        style={[styles.signInButton, { 
+                        style={[styles.sendButton, { 
                             backgroundColor: colors.black,
-                            opacity: (!emailOrStaffId.trim() || !password.trim() || loading) ? 0.5 : 1,
+                            opacity: (!email.trim() || loading) ? 0.5 : 1,
                         }]}
-                        onPress={handleLogin}
-                        disabled={!emailOrStaffId.trim() || !password.trim() || loading}
+                        onPress={handleSendCode}
+                        disabled={!email.trim() || loading}
                         activeOpacity={0.8}
                     >
                         {loading ? (
-                            <Text style={[styles.signInButtonText, { color: colors.white }]}>Loading...</Text>
+                            <Text style={[styles.sendButtonText, { color: colors.white }]}>Sending...</Text>
                         ) : (
-                            <Text style={[styles.signInButtonText, { color: colors.white }]}>SIGN IN</Text>
+                            <Text style={[styles.sendButtonText, { color: colors.white }]}>SEND CODE</Text>
                         )}
                     </TouchableOpacity>
                 </ScrollView>
@@ -213,43 +194,35 @@ const styles = StyleSheet.create({
     errorText: {
         flex: 1,
         fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
+    },
+    descriptionText: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: layout.spacing.xxl,
+        lineHeight: 22,
+        paddingHorizontal: layout.spacing.md,
     },
     inputGroup: {
-        marginBottom: layout.spacing.xl,
+        marginBottom: layout.spacing.xxl,
     },
     inputLabel: {
         fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
         marginBottom: layout.spacing.sm,
+        fontFamily: 'Montserrat_400Regular',
     },
     textInput: {
         fontSize: 16,
-        fontFamily: 'Montserrat_400Regular',
         paddingVertical: layout.spacing.sm,
         borderBottomWidth: 1,
     },
-    passwordContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    forgotPassword: {
-        alignSelf: 'flex-end',
-        marginTop: layout.spacing.sm,
-        marginBottom: layout.spacing.xxl,
-    },
-    forgotPasswordText: {
-        fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
-    },
-    signInButton: {
+    sendButton: {
         height: 56,
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: layout.spacing.xxl,
     },
-    signInButtonText: {
+    sendButtonText: {
         fontSize: 16,
         fontFamily: 'Montserrat_700Bold',
         letterSpacing: 1.2,

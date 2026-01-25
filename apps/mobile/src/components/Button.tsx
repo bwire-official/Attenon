@@ -26,18 +26,18 @@ export const Button = ({
     const getBackgroundColor = () => {
         if (disabled) return colors.text.secondary;
         switch (variant) {
-            case 'primary': return isDark ? colors.primary : colors.text.primary;
+            case 'primary': return isDark ? colors.white : colors.black;
             case 'secondary': return colors.secondary;
             case 'outline': return 'transparent';
             case 'ghost': return 'transparent';
-            default: return isDark ? colors.primary : colors.text.primary;
+            default: return isDark ? colors.white : colors.black;
         }
     };
 
     const getTextColor = () => {
         if (disabled) return colors.text.disabled;
         switch (variant) {
-            case 'outline': return colors.primary;
+            case 'outline': return isDark ? colors.white : colors.black;
             case 'ghost': return colors.text.secondary;
             case 'primary': return isDark ? colors.black : colors.white;
             default: return isDark ? colors.black : colors.white;

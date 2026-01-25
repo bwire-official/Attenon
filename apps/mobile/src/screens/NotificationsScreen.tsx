@@ -184,7 +184,7 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
                                 <View style={styles.notificationHeader}>
                                     <Text style={[styles.notificationTitle, { 
                                         color: colors.text.primary,
-                                        fontWeight: notification.read ? '500' : '600',
+                                        fontFamily: notification.read ? 'Montserrat_500Medium' : 'Montserrat_600SemiBold',
                                     }]}>
                                         {notification.title}
                                     </Text>
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 20,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         flex: 1,
         textAlign: 'center',
     },
@@ -274,13 +274,13 @@ const styles = StyleSheet.create({
     },
     statNumber: {
         fontSize: 24,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginTop: layout.spacing.xs,
         marginBottom: layout.spacing.xs / 2,
     },
     statLabel: {
         fontSize: 11,
-        fontWeight: '500',
+        fontFamily: 'Montserrat_500Medium',
         textAlign: 'center',
     },
     notificationsList: {
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     },
     valueText: {
         fontSize: 12,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     notificationMessage: {
         fontSize: 13,
@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
     },
     notificationTime: {
         fontSize: 11,
-        fontWeight: '400',
+        fontFamily: 'Montserrat_400Regular',
     },
     unreadDot: {
         width: 8,

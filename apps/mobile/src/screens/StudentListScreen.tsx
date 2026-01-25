@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         flex: 1,
         fontSize: 20,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         textAlign: 'center',
     },
     addButton: {
@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 28,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginBottom: layout.spacing.xs,
     },
     titleSmall: {
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
     },
     sectionTitle: {
         fontSize: 18,
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
         marginBottom: layout.spacing.md,
         marginTop: layout.spacing.sm,
     },
@@ -534,20 +534,20 @@ const styles = StyleSheet.create({
     },
     statValue: {
         fontSize: 32,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginTop: layout.spacing.sm,
         marginBottom: layout.spacing.xs,
     },
     statLabel: {
         fontSize: 14,
-        fontWeight: '500',
+        fontFamily: 'Montserrat_500Medium',
     },
     listHeader: {
         marginBottom: layout.spacing.md,
     },
     listTitle: {
         fontSize: 20,
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     emptyState: {
         alignItems: 'center',
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
     },
     emptyStateText: {
         fontSize: 18,
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
         marginTop: layout.spacing.lg,
         marginBottom: layout.spacing.xs,
     },
@@ -588,14 +588,14 @@ const styles = StyleSheet.create({
     },
     avatarText: {
         fontSize: 18,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     studentInfo: {
         flex: 1,
     },
     studentName: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
         marginBottom: layout.spacing.xs / 2,
     },
     studentEmail: {

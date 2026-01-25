@@ -5,34 +5,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { login } from '../services/auth';
 
-interface InstructorLoginScreenProps {
+interface StudentLoginScreenProps {
     onLogin?: () => void;
     onBack?: () => void;
     onForgotPassword?: () => void;
 }
 
-export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: InstructorLoginScreenProps) => {
+export const StudentLoginScreen = ({ onLogin, onBack, onForgotPassword }: StudentLoginScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
-    const [emailOrStaffId, setEmailOrStaffId] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleLogin = () => {
-        if (!emailOrStaffId.trim() || !password.trim()) {
-            setError('Please enter both email/staff ID and password');
+    const handleLogin = async () => {
+        if (!email.trim() || !password.trim()) {
+            setError('Please enter both email and password');
             return;
         }
-        
+
         setLoading(true);
         setError(null);
-        // Simulate API call
-        setTimeout(() => {
-            setLoading(false);
+
+        const result = await login({ email: email.trim(), password });
+
+        setLoading(false);
+
+        if (result.success) {
             onLogin?.();
-        }, 1500);
+        } else {
+            setError(result.error || 'Failed to log in. Please try again.');
+        }
     };
 
     return (
@@ -86,23 +92,24 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                         </View>
                     )}
 
-                    {/* Email/Staff ID Input */}
+                    {/* Email Input */}
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email or Staff ID</Text>
+                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email</Text>
                         <TextInput
                             style={[styles.textInput, { 
                                 color: colorPalette.grey[900],
                                 borderBottomColor: colorPalette.grey[300],
                             }]}
-                            value={emailOrStaffId}
+                            value={email}
                             onChangeText={(text) => {
-                                setEmailOrStaffId(text);
+                                setEmail(text);
                                 setError(null);
                             }}
-                            placeholder="Enter your email or staff ID"
+                            placeholder="john@email.com"
                             placeholderTextColor={colorPalette.grey[400]}
-                            keyboardType="default"
+                            keyboardType="email-address"
                             autoCapitalize="none"
+                            autoComplete="email"
                         />
                     </View>
 
@@ -145,10 +152,10 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                     <TouchableOpacity
                         style={[styles.signInButton, { 
                             backgroundColor: colors.black,
-                            opacity: (!emailOrStaffId.trim() || !password.trim() || loading) ? 0.5 : 1,
+                            opacity: (!email.trim() || !password.trim() || loading) ? 0.5 : 1,
                         }]}
                         onPress={handleLogin}
-                        disabled={!emailOrStaffId.trim() || !password.trim() || loading}
+                        disabled={!email.trim() || !password.trim() || loading}
                         activeOpacity={0.8}
                     >
                         {loading ? (
@@ -157,6 +164,18 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                             <Text style={[styles.signInButtonText, { color: colors.white }]}>SIGN IN</Text>
                         )}
                     </TouchableOpacity>
+
+                    {/* Sign Up Link */}
+                    <View style={styles.signUpContainer}>
+                        <Text style={[styles.signUpText, { color: colorPalette.grey[600] }]}>
+                            Don't have an account?{' '}
+                        </Text>
+                        <TouchableOpacity activeOpacity={0.7}>
+                            <Text style={[styles.signUpLink, { color: colorPalette.grey[900] }]}>
+                                Sign Up
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </View>
@@ -170,6 +189,7 @@ const styles = StyleSheet.create({
     headerSection: {
         paddingHorizontal: layout.spacing.xl,
         paddingBottom: layout.spacing.xxl * 2,
+        overflow: 'hidden',
     },
     backButton: {
         width: 40,
@@ -253,5 +273,18 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontFamily: 'Montserrat_700Bold',
         letterSpacing: 1.2,
+    },
+    signUpContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    signUpText: {
+        fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
+    },
+    signUpLink: {
+        fontSize: 14,
+        fontFamily: 'Montserrat_600SemiBold',
     },
 });

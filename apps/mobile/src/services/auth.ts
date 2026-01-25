@@ -147,6 +147,23 @@ export async function updateProfile(updates: Partial<Profile>): Promise<AuthResp
     return { success: true, user: data };
 }
 
+// Reset password for a user.
+export async function resetPassword(email: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: 'attenon://reset-password',
+        });
+
+        if (error) {
+            return { success: false, error: error.message };
+        }
+
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: 'An unexpected error occurred' };
+    }
+}
+
 // Listen to auth state changes.
 export function onAuthStateChange(callback: (event: string, session: any) => void) {
     return supabase.auth.onAuthStateChange(callback);

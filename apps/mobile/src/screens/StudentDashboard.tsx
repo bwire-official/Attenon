@@ -24,9 +24,10 @@ const RECENT_ATTENDANCE = [
 
 interface StudentDashboardProps {
     onNavigateToNotifications?: () => void;
+    onNavigateToSettings?: () => void;
 }
 
-export const StudentDashboard = ({ onNavigateToNotifications }: StudentDashboardProps) => {
+export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettings }: StudentDashboardProps) => {
     const { colors, isDark } = useTheme();
     const { width: SCREEN_WIDTH } = useWindowDimensions();
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
@@ -44,7 +45,7 @@ export const StudentDashboard = ({ onNavigateToNotifications }: StudentDashboard
         { id: '4', icon: 'library-outline', label: 'All Courses', onPress: () => { } },
         { id: '5', icon: 'notifications-outline', label: 'Notifications', onPress: () => { onNavigateToNotifications?.(); }, color: 'frozenLake' },
         { id: '6', icon: 'person-outline', label: 'Profile', onPress: () => { } },
-        { id: '7', icon: 'settings-outline', label: 'Settings', onPress: () => { }, color: 'inkBlack' },
+        { id: '7', icon: 'settings-outline', label: 'Settings', onPress: () => { onNavigateToSettings?.(); }, color: 'inkBlack' },
         { id: '8', icon: 'help-circle-outline', label: 'Help & Support', onPress: () => { }, color: 'yellowGreen' },
     ];
 
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
         // Font size set inline
     },
     name: {
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     notificationButton: {
         justifyContent: 'center',
@@ -467,7 +468,7 @@ const styles = StyleSheet.create({
     },
     badgeText: {
         fontSize: 10,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
     },
     statsCard: {
         borderRadius: layout.borderRadius.lg,
@@ -500,12 +501,12 @@ const styles = StyleSheet.create({
         marginBottom: layout.spacing.sm,
     },
     statValue: {
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginBottom: layout.spacing.xs / 2,
         letterSpacing: -0.5,
     },
     statLabel: {
-        fontWeight: '500',
+        fontFamily: 'Montserrat_500Medium',
         textAlign: 'center',
     },
     sectionHeader: {
@@ -515,10 +516,10 @@ const styles = StyleSheet.create({
         marginBottom: layout.spacing.md,
     },
     sectionTitle: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     seeAllText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     coursesScroll: {
         marginBottom: layout.spacing.lg,
@@ -554,10 +555,10 @@ const styles = StyleSheet.create({
         borderRadius: layout.borderRadius.round,
     },
     attendanceBadgeText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     courseCode: {
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_700Bold',
         marginBottom: layout.spacing.xs,
     },
     courseTitle: {
@@ -591,7 +592,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     menuButtonText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
         textAlign: 'center',
     },
     historyList: {
@@ -627,7 +628,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     historyCourse: {
-        fontWeight: '500',
+        fontFamily: 'Montserrat_500Medium',
     },
     historyDate: {
         marginTop: 2,
@@ -644,7 +645,7 @@ const styles = StyleSheet.create({
         // Background set inline
     },
     statusText: {
-        fontWeight: '600',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     statusTextPresent: {
         // Color set inline

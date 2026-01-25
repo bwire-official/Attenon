@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, TextInput, Text, StyleSheet } from 'react-native';
+import { View, TextInput, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
@@ -36,8 +36,11 @@ export const Input = ({
 }: InputProps) => {
     const { colors, isDark } = useTheme();
     const [isFocused, setIsFocused] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const isUnderline = variant === 'underline';
     const isEditable = editable !== false;
+    const isPasswordField = secureTextEntry === true;
+    const shouldShowPassword = isPasswordField && showPassword;
 
     return (
         <View style={styles.container}>
@@ -47,10 +50,10 @@ export const Input = ({
                 isUnderline && styles.inputWrapperUnderline,
                 !isUnderline && {
                     backgroundColor: isDark ? colors.backgroundSecondary : colors.background,
-                    borderColor: error ? colors.danger : (isFocused && isEditable ? (isDark ? colorPalette.grey[100] : colors.text.primary) : colors.border),
+                    borderColor: error ? '#EF4444' : (isFocused && isEditable ? (isDark ? colorPalette.grey[100] : colors.text.primary) : colors.border),
                 },
                 isUnderline && {
-                    borderBottomColor: error ? colors.danger : (isFocused && isEditable ? (isDark ? colorPalette.grey[100] : colors.text.primary) : colors.border),
+                    borderBottomColor: error ? '#EF4444' : (isFocused && isEditable ? (isDark ? colorPalette.grey[100] : colors.text.primary) : colors.border),
                 },
                 !isUnderline && isFocused && isEditable && { backgroundColor: isDark ? colorPalette.grey[800] : colors.white },
             ]}>
@@ -67,6 +70,7 @@ export const Input = ({
                         styles.input,
                         icon && styles.inputWithIcon,
                         isUnderline && styles.inputUnderline,
+                        isPasswordField && styles.inputWithPasswordToggle,
                         { color: colors.text.primary },
                         !editable && { opacity: 0.6 },
                     ]}
@@ -74,7 +78,7 @@ export const Input = ({
                     onChangeText={onChangeText || (() => {})}
                     placeholder={placeholder}
                     placeholderTextColor={colors.text.secondary}
-                    secureTextEntry={secureTextEntry}
+                    secureTextEntry={isPasswordField && !shouldShowPassword}
                     keyboardType={keyboardType}
                     autoCapitalize={autoCapitalize}
                     autoComplete={autoComplete as any}
@@ -82,8 +86,21 @@ export const Input = ({
                     onFocus={() => isEditable && setIsFocused(true)}
                     onBlur={() => isEditable && setIsFocused(false)}
                 />
+                {isPasswordField && (
+                    <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.passwordToggle}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons
+                            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                            size={20}
+                            color={colors.text.secondary}
+                        />
+                    </TouchableOpacity>
+                )}
             </View>
-            {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
+            {error && <Text style={[styles.errorText, { color: '#EF4444' }]}>{error}</Text>}
         </View>
     );
 };
@@ -122,9 +139,16 @@ const styles = StyleSheet.create({
     inputWithIcon: {
         paddingLeft: 0,
     },
+    inputWithPasswordToggle: {
+        paddingRight: 0,
+    },
     inputUnderline: {
         height: 48,
         paddingHorizontal: 0,
+    },
+    passwordToggle: {
+        padding: layout.spacing.xs,
+        marginLeft: layout.spacing.xs,
     },
     errorText: {
         fontSize: 12,

@@ -6,32 +6,44 @@ import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 
-interface InstructorLoginScreenProps {
-    onLogin?: () => void;
+interface InstructorResetPasswordScreenProps {
     onBack?: () => void;
-    onForgotPassword?: () => void;
+    onPasswordReset?: () => void;
 }
 
-export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: InstructorLoginScreenProps) => {
-    const { colors, isDark } = useTheme();
+export const InstructorResetPasswordScreen = ({ onBack, onPasswordReset }: InstructorResetPasswordScreenProps) => {
+    const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    const [emailOrStaffId, setEmailOrStaffId] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleLogin = () => {
-        if (!emailOrStaffId.trim() || !password.trim()) {
-            setError('Please enter both email/staff ID and password');
+    const handleResetPassword = async () => {
+        if (!password.trim()) {
+            setError('Please enter a new password');
             return;
         }
-        
+
+        if (password.length < 6) {
+            setError('Password must be at least 6 characters long');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
         setLoading(true);
         setError(null);
-        // Simulate API call
+
+        // Simulate API call to reset password
         setTimeout(() => {
             setLoading(false);
-            onLogin?.();
+            onPasswordReset?.();
         }, 1500);
     };
 
@@ -54,8 +66,8 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                     />
                 </TouchableOpacity>
                 <View style={styles.headerTextContainer}>
-                    <Text style={[styles.helloText, { color: colors.white }]}>Hello</Text>
-                    <Text style={[styles.signInText, { color: colors.white }]}>Sign In</Text>
+                    <Text style={[styles.helloText, { color: colors.white }]}>Reset</Text>
+                    <Text style={[styles.signInText, { color: colors.white }]}>Password</Text>
                 </View>
             </View>
 
@@ -86,29 +98,13 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                         </View>
                     )}
 
-                    {/* Email/Staff ID Input */}
-                    <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email or Staff ID</Text>
-                        <TextInput
-                            style={[styles.textInput, { 
-                                color: colorPalette.grey[900],
-                                borderBottomColor: colorPalette.grey[300],
-                            }]}
-                            value={emailOrStaffId}
-                            onChangeText={(text) => {
-                                setEmailOrStaffId(text);
-                                setError(null);
-                            }}
-                            placeholder="Enter your email or staff ID"
-                            placeholderTextColor={colorPalette.grey[400]}
-                            keyboardType="default"
-                            autoCapitalize="none"
-                        />
-                    </View>
+                    <Text style={[styles.descriptionText, { color: colorPalette.grey[600] }]}>
+                        Enter your new password below
+                    </Text>
 
-                    {/* Password Input */}
+                    {/* New Password Input */}
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Password</Text>
+                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>New Password</Text>
                         <View style={styles.passwordContainer}>
                             <TextInput
                                 style={[styles.textInput, { 
@@ -121,40 +117,75 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                                     setPassword(text);
                                     setError(null);
                                 }}
-                                placeholder="••••••"
+                                placeholder="Enter new password"
                                 placeholderTextColor={colorPalette.grey[400]}
-                                secureTextEntry
+                                secureTextEntry={!showPassword}
                                 autoCapitalize="none"
-                                autoComplete="password"
+                                autoComplete="password-new"
                             />
+                            <TouchableOpacity
+                                onPress={() => setShowPassword(!showPassword)}
+                                style={styles.eyeIcon}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                    size={20}
+                                    color={colorPalette.grey[600]}
+                                />
+                            </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* Forgot Password */}
-                    <TouchableOpacity 
-                        style={styles.forgotPassword}
-                        onPress={onForgotPassword}
-                        activeOpacity={0.7}
-                    >
-                        <Text style={[styles.forgotPasswordText, { color: colorPalette.grey[600] }]}>
-                            Forget password?
-                        </Text>
-                    </TouchableOpacity>
+                    {/* Confirm Password Input */}
+                    <View style={styles.inputGroup}>
+                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Confirm Password</Text>
+                        <View style={styles.passwordContainer}>
+                            <TextInput
+                                style={[styles.textInput, { 
+                                    flex: 1,
+                                    color: colorPalette.grey[900],
+                                    borderBottomColor: colorPalette.grey[300],
+                                }]}
+                                value={confirmPassword}
+                                onChangeText={(text) => {
+                                    setConfirmPassword(text);
+                                    setError(null);
+                                }}
+                                placeholder="Confirm new password"
+                                placeholderTextColor={colorPalette.grey[400]}
+                                secureTextEntry={!showConfirmPassword}
+                                autoCapitalize="none"
+                                autoComplete="password-new"
+                            />
+                            <TouchableOpacity
+                                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                                style={styles.eyeIcon}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                                    size={20}
+                                    color={colorPalette.grey[600]}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
 
-                    {/* Sign In Button */}
+                    {/* Reset Password Button */}
                     <TouchableOpacity
-                        style={[styles.signInButton, { 
+                        style={[styles.resetButton, { 
                             backgroundColor: colors.black,
-                            opacity: (!emailOrStaffId.trim() || !password.trim() || loading) ? 0.5 : 1,
+                            opacity: (!password.trim() || !confirmPassword.trim() || loading) ? 0.5 : 1,
                         }]}
-                        onPress={handleLogin}
-                        disabled={!emailOrStaffId.trim() || !password.trim() || loading}
+                        onPress={handleResetPassword}
+                        disabled={!password.trim() || !confirmPassword.trim() || loading}
                         activeOpacity={0.8}
                     >
                         {loading ? (
-                            <Text style={[styles.signInButtonText, { color: colors.white }]}>Loading...</Text>
+                            <Text style={[styles.resetButtonText, { color: colors.white }]}>Resetting...</Text>
                         ) : (
-                            <Text style={[styles.signInButtonText, { color: colors.white }]}>SIGN IN</Text>
+                            <Text style={[styles.resetButtonText, { color: colors.white }]}>RESET PASSWORD</Text>
                         )}
                     </TouchableOpacity>
                 </ScrollView>
@@ -213,43 +244,46 @@ const styles = StyleSheet.create({
     errorText: {
         flex: 1,
         fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
+    },
+    descriptionText: {
+        fontSize: 16,
+        textAlign: 'center',
+        marginBottom: layout.spacing.xxl * 2,
+        lineHeight: 22,
+        paddingHorizontal: layout.spacing.md,
     },
     inputGroup: {
         marginBottom: layout.spacing.xl,
     },
     inputLabel: {
         fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
         marginBottom: layout.spacing.sm,
-    },
-    textInput: {
-        fontSize: 16,
         fontFamily: 'Montserrat_400Regular',
-        paddingVertical: layout.spacing.sm,
-        borderBottomWidth: 1,
     },
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: colorPalette.grey[300],
     },
-    forgotPassword: {
-        alignSelf: 'flex-end',
-        marginTop: layout.spacing.sm,
-        marginBottom: layout.spacing.xxl,
+    textInput: {
+        fontSize: 16,
+        paddingVertical: layout.spacing.sm,
+        flex: 1,
     },
-    forgotPasswordText: {
-        fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
+    eyeIcon: {
+        padding: layout.spacing.xs,
+        marginLeft: layout.spacing.xs,
     },
-    signInButton: {
+    resetButton: {
         height: 56,
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: layout.spacing.xxl,
+        marginTop: layout.spacing.xl,
     },
-    signInButtonText: {
+    resetButtonText: {
         fontSize: 16,
         fontFamily: 'Montserrat_700Bold',
         letterSpacing: 1.2,

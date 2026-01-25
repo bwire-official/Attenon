@@ -1,0 +1,7 @@
+{
+  "buildCommand": "pnpm --filter student-portal build",
+  "outputDirectory": "apps/student-portal/dist",
+  "installCommand": "pnpm install",
+  "framework": "vite",
+  "nodeVersion": "20.x"
+}

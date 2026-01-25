@@ -1,6 +1,6 @@
 {
-  "buildCommand": "pnpm --filter student-portal build",
+  "buildCommand": "cd apps/student-portal && npm install && npm run build",
   "outputDirectory": "apps/student-portal/dist",
-  "installCommand": "pnpm install",
+  "installCommand": "npm install --prefix apps/student-portal",
   "framework": "vite"
 }

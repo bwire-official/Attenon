@@ -14,9 +14,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.attenon.mobile"
     },
     "android": {
+      "package": "com.attenon.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/attenon logo.png",
         "backgroundColor": "#ffffff"

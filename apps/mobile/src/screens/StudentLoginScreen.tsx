@@ -20,6 +20,7 @@ export const StudentLoginScreen = ({ onLogin, onBack, onForgotPassword }: Studen
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showPassword, setShowPassword] = useState(false);
 
     const handleLogin = async () => {
         if (!email.trim() || !password.trim()) {
@@ -130,10 +131,21 @@ export const StudentLoginScreen = ({ onLogin, onBack, onForgotPassword }: Studen
                                 }}
                                 placeholder="••••••"
                                 placeholderTextColor={colorPalette.grey[400]}
-                                secureTextEntry
+                                secureTextEntry={!showPassword}
                                 autoCapitalize="none"
                                 autoComplete="password"
                             />
+                            <TouchableOpacity
+                                onPress={() => setShowPassword(!showPassword)}
+                                style={styles.eyeIcon}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                    size={20}
+                                    color={colorPalette.grey[600]}
+                                />
+                            </TouchableOpacity>
                         </View>
                     </View>
 
@@ -252,6 +264,10 @@ const styles = StyleSheet.create({
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    eyeIcon: {
+        padding: layout.spacing.xs,
+        marginLeft: layout.spacing.sm,
     },
     forgotPassword: {
         alignSelf: 'flex-end',

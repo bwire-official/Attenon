@@ -1,14 +1,19 @@
 // Application configuration
+import Constants from 'expo-constants';
 
-// API URLs
+// API URLs - Load from environment variables
 export const API_CONFIG = {
     // Python Face Recognition API
-    FACE_API_URL: __DEV__ 
-        ? 'http://192.168.0.100:8000'  // Local development - update with your machine's IP
-        : 'https://your-production-api.com',
-    
-    // Supabase URL (also in supabase.ts but here for reference)
-    SUPABASE_URL: 'https://jvcgepjqhbczpaqaajjw.supabase.co',
+    FACE_API_URL: Constants.expoConfig?.extra?.faceApiUrl ||
+        process.env.EXPO_PUBLIC_FACE_API_URL ||
+        (__DEV__
+            ? 'http://localhost:8000'  // Default local development
+            : ''), // Fail/empty if not configured in production
+
+    // Supabase URL (for reference, actual connection is in supabase.ts)
+    SUPABASE_URL: Constants.expoConfig?.extra?.supabaseUrl ||
+        process.env.EXPO_PUBLIC_SUPABASE_URL ||
+        '',
 };
 
 // Face Recognition settings

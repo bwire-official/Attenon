@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { checkAllowedUser, AllowedUser } from '../services/validation';
+import { registerUser } from '../services/registration';
+
+const STUDENT_PORTAL_URL = 'https://attenon-register.vercel.app';
 
 interface RegisterStudentScreenProps {
-    onRegister?: (data: StudentRegistrationData) => void;
+    onRegister?: (email: string, role: 'student' | 'instructor') => void;
     onBack?: () => void;
 }
 
@@ -19,97 +23,173 @@ interface StudentRegistrationData {
 export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScreenProps) => {
     const { colors } = useTheme();
     const insets = useSafeAreaInsets();
-    const [step, setStep] = useState(1);
-    const [email, setEmail] = useState('');
+
+    // Multi-step state
+    const [step, setStep] = useState<'identifier' | 'password'>('identifier');
+
+    // Form data
+    const [emailOrRegNumber, setEmailOrRegNumber] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [errors, setErrors] = useState<Record<string, string>>({});
+
+    // Validation state
+    const [allowedUser, setAllowedUser] = useState<AllowedUser | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [showRegistrationLink, setShowRegistrationLink] = useState(false);
 
-    const validateStep1 = (): boolean => {
-        const newErrors: Record<string, string> = {};
-        if (!email.trim()) {
-            newErrors.email = 'Email is required';
-        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-            newErrors.email = 'Please enter a valid email address';
-        }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
-    const validateStep2 = (): boolean => {
-        const newErrors: Record<string, string> = {};
-        if (!password.trim()) {
-            newErrors.password = 'Password is required';
-        } else if (password.length < 8) {
-            newErrors.password = 'Password must be at least 8 characters';
-        }
-        if (!confirmPassword.trim()) {
-            newErrors.confirmPassword = 'Please confirm your password';
-        } else if (password !== confirmPassword) {
-            newErrors.confirmPassword = 'Passwords do not match';
-        }
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
-
-    const handleNext = () => {
-        if (validateStep1()) {
-            setStep(2);
+    /**
+     * Open student portal registration website
+     */
+    const handleOpenRegistrationPortal = async () => {
+        try {
+            const canOpen = await Linking.canOpenURL(STUDENT_PORTAL_URL);
+            if (canOpen) {
+                await Linking.openURL(STUDENT_PORTAL_URL);
+            } else {
+                setError('Unable to open registration portal. Please visit: ' + STUDENT_PORTAL_URL);
+            }
+        } catch (err) {
+            console.error('Error opening registration portal:', err);
+            setError('Unable to open registration portal. Please visit: ' + STUDENT_PORTAL_URL);
         }
     };
 
-    const handleRegister = () => {
-        if (!validateStep2()) {
+    /**
+     * Step 1: Validate email/reg number exists in allowed_users
+     */
+    const handleContinue = async () => {
+        if (!emailOrRegNumber.trim()) {
+            setError('Please enter your email or registration number');
             return;
         }
+
         setLoading(true);
-        setTimeout(() => {
-            setLoading(false);
-            onRegister?.({
-                email: email.trim(),
-                password: password,
-            });
-        }, 1500);
+        setError(null);
+
+        // Check if user is allowed to register
+        const result = await checkAllowedUser(emailOrRegNumber);
+
+        setLoading(false);
+
+        if (!result.success) {
+            setError(result.error || 'An error occurred. Please try again.');
+            return;
+        }
+
+        if (!result.isAllowed) {
+            setError(
+                result.error ||
+                'You are not authorized to register. Please visit the student portal first.'
+            );
+            setShowRegistrationLink(true);
+            return;
+        }
+
+        // Reset registration link flag if user is allowed
+        setShowRegistrationLink(false);
+
+        // User is allowed, proceed to password step
+        if (!result.user) {
+            setError('Unexpected error: User data missing. Please try again.');
+            return;
+        }
+
+        setAllowedUser(result.user);
+        setStep('password');
     };
 
+    /**
+     * Step 2: Create account with password
+     */
+    const handleRegister = async () => {
+        // Validate password
+        if (!password.trim()) {
+            setError('Please enter a password');
+            return;
+        }
+
+        if (password.length < 8) {
+            setError('Password must be at least 8 characters long');
+            return;
+        }
+
+        if (!confirmPassword.trim()) {
+            setError('Please confirm your password');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match');
+            return;
+        }
+
+        if (!allowedUser) {
+            setError('An error occurred. Please go back and try again.');
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        // Register the user
+        const result = await registerUser({
+            emailOrRegNumber,
+            password,
+            allowedUser,
+        });
+
+        setLoading(false);
+
+        if (!result.success) {
+            setError(result.error || 'Failed to create account. Please try again.');
+            return;
+        }
+
+        // Success! Navigate to email verification
+        onRegister?.(allowedUser.email, allowedUser.role);
+    };
+
+    /**
+     * Go back to previous step
+     */
     const handleBack = () => {
-        if (step === 2) {
-            setStep(1);
-            setErrors({});
+        if (step === 'password') {
+            setStep('identifier');
+            setError(null);
+            setPassword('');
+            setConfirmPassword('');
         } else {
             onBack?.();
         }
     };
 
-    const getStepTitle = (): string => {
-        if (step === 1) return 'Sign Up';
-        return 'Create Password';
-    };
-
     return (
         <View style={styles.container}>
             {/* Header Section */}
-            <View style={[styles.headerSection, { 
+            <View style={[styles.headerSection, {
                 backgroundColor: colors.black,
-                paddingTop: insets.top + layout.spacing.md 
+                paddingTop: insets.top + layout.spacing.md
             }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={handleBack}
                     style={styles.backButton}
                     activeOpacity={0.7}
+                    disabled={loading}
                 >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
                         color={colors.white}
                     />
                 </TouchableOpacity>
                 <View style={styles.headerTextContainer}>
-                    <Text style={[styles.helloText, { color: colors.white }]}>{step === 1 ? 'Create' : 'Create'}</Text>
-                    <Text style={[styles.signInText, { color: colors.white }]}>{step === 1 ? 'Account' : 'Password'}</Text>
+                    <Text style={[styles.helloText, { color: colors.white }]}>Create</Text>
+                    <Text style={[styles.signInText, { color: colors.white }]}>
+                        {step === 'identifier' ? 'Account' : 'Password'}
+                    </Text>
                 </View>
             </View>
 
@@ -118,7 +198,7 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.formSection, { backgroundColor: colors.white }]}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[
                         styles.formContent,
                         { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -126,62 +206,135 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
                 >
-                    {step === 1 ? (
+                    {/* Error Message */}
+                    {error && (
+                        <View style={styles.errorWrapper}>
+                            <View style={[styles.errorContainer, { backgroundColor: '#FEE2E2' }]}>
+                                <Ionicons
+                                    name="alert-circle"
+                                    size={20}
+                                    color="#DC2626"
+                                    style={{ marginTop: 2 }}
+                                />
+                                <Text
+                                    style={[styles.errorText, { color: '#DC2626' }]}
+                                    numberOfLines={0}
+                                >
+                                    {error}
+                                </Text>
+                            </View>
+
+                            {/* Registration Portal Link Button */}
+                            {showRegistrationLink && (
+                                <TouchableOpacity
+                                    style={[styles.portalButton, {
+                                        backgroundColor: colors.black,
+                                        borderColor: colors.black,
+                                    }]}
+                                    onPress={handleOpenRegistrationPortal}
+                                    activeOpacity={0.8}
+                                >
+                                    <Ionicons
+                                        name="open-outline"
+                                        size={18}
+                                        color={colors.white}
+                                        style={styles.portalButtonIcon}
+                                    />
+                                    <Text
+                                        style={[styles.portalButtonText, { color: colors.white }]}
+                                        numberOfLines={1}
+                                        adjustsFontSizeToFit
+                                    >
+                                        Open Registration Portal
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+
+                    {step === 'identifier' ? (
                         <>
-                            {/* Email Input */}
+                            {/* Step 1: Email/Reg Number Input */}
                             <View style={styles.inputGroup}>
                                 <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address or Reg Number</Text>
                                 <TextInput
-                                    style={[styles.textInput, { 
+                                    style={[styles.textInput, {
                                         color: colorPalette.grey[900],
-                                        borderBottomColor: errors.email ? '#EF4444' : colorPalette.grey[300],
+                                        borderBottomColor: error ? '#EF4444' : colorPalette.grey[300],
                                     }]}
-                                    value={email}
+                                    value={emailOrRegNumber}
                                     onChangeText={(text) => {
-                                        setEmail(text);
-                                        if (errors.email) {
-                                            setErrors({ ...errors, email: '' });
-                                        }
+                                        setEmailOrRegNumber(text);
+                                        setError(null);
+                                        setShowRegistrationLink(false);
                                     }}
                                     placeholder="Enter your email or reg number"
                                     placeholderTextColor={colorPalette.grey[400]}
                                     keyboardType="default"
                                     autoCapitalize="none"
-                                    autoComplete="email"
+                                    autoComplete="off"
+                                    editable={!loading}
                                 />
-                                {errors.email && (
-                                    <Text style={styles.errorText}>{errors.email}</Text>
-                                )}
+                            </View>
+
+                            <View style={styles.infoBox}>
+                                <Ionicons
+                                    name="information-circle-outline"
+                                    size={20}
+                                    color={colorPalette.grey[600]}
+                                    style={{ marginTop: 2 }}
+                                />
+                                <View style={styles.infoTextContainer}>
+                                    <Text
+                                        style={[styles.infoText, { color: colorPalette.grey[600] }]}
+                                        numberOfLines={0}
+                                    >
+                                        You must be pre-registered by your institution. If you're not in the system, please visit the student portal to register first.
+                                    </Text>
+                                    <TouchableOpacity
+                                        onPress={handleOpenRegistrationPortal}
+                                        activeOpacity={0.7}
+                                        style={styles.infoLink}
+                                    >
+                                        <Text style={[styles.infoLinkText, { color: colors.black }]}>
+                                            Open Registration Portal →
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
                             {/* Continue Button */}
                             <TouchableOpacity
-                                style={[styles.continueButton, { 
+                                style={[styles.continueButton, {
                                     backgroundColor: colors.black,
-                                    opacity: !email.trim() ? 0.5 : 1,
+                                    opacity: !emailOrRegNumber.trim() || loading ? 0.5 : 1,
                                 }]}
-                                onPress={handleNext}
-                                disabled={!email.trim()}
+                                onPress={handleContinue}
+                                disabled={!emailOrRegNumber.trim() || loading}
                                 activeOpacity={0.8}
                             >
-                                <Text style={[styles.continueButtonText, { color: colors.white }]}>Continue</Text>
+                                {loading ? (
+                                    <ActivityIndicator color={colors.white} />
+                                ) : (
+                                    <Text style={[styles.continueButtonText, { color: colors.white }]}>CONTINUE</Text>
+                                )}
                             </TouchableOpacity>
                         </>
                     ) : (
                         <>
-                            {/* Email Display (Read-only) */}
-                            <View style={styles.inputGroup}>
-                                <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address or Reg Number</Text>
-                                <TextInput
-                                    style={[styles.textInput, { 
-                                        color: colorPalette.grey[500],
-                                        borderBottomColor: colorPalette.grey[300],
-                                    }]}
-                                    value={email}
-                                    placeholder="Enter your email or reg number"
-                                    placeholderTextColor={colorPalette.grey[400]}
-                                    editable={false}
-                                />
+                            {/* Step 2: Password Creation */}
+                            {/* Display verified info - only show what user typed */}
+                            <View style={[styles.verifiedBox, { backgroundColor: '#D1FAE5' }]}>
+                                <Ionicons name="checkmark-circle" size={20} color="#059669" style={{ marginTop: 2 }} />
+                                <View style={styles.verifiedInfo}>
+                                    <Text
+                                        style={[styles.verifiedText, { color: '#047857' }]}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                    >
+                                        {emailOrRegNumber.trim()}
+                                    </Text>
+                                </View>
                             </View>
 
                             {/* Password Input */}
@@ -189,26 +342,22 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                 <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Password</Text>
                                 <View style={styles.passwordContainer}>
                                     <TextInput
-                                        style={[styles.textInput, { 
+                                        style={[styles.textInput, {
                                             flex: 1,
                                             color: colorPalette.grey[900],
-                                            borderBottomColor: errors.password ? '#EF4444' : colorPalette.grey[300],
+                                            borderBottomColor: colorPalette.grey[300],
                                         }]}
                                         value={password}
                                         onChangeText={(text) => {
                                             setPassword(text);
-                                            if (errors.password) {
-                                                setErrors({ ...errors, password: '' });
-                                            }
-                                            if (errors.confirmPassword && confirmPassword) {
-                                                setErrors({ ...errors, confirmPassword: '' });
-                                            }
+                                            setError(null);
                                         }}
                                         placeholder="Enter your password"
                                         placeholderTextColor={colorPalette.grey[400]}
                                         secureTextEntry={!showPassword}
                                         autoCapitalize="none"
                                         autoComplete="password-new"
+                                        editable={!loading}
                                     />
                                     <TouchableOpacity
                                         onPress={() => setShowPassword(!showPassword)}
@@ -222,9 +371,6 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                         />
                                     </TouchableOpacity>
                                 </View>
-                                {errors.password && (
-                                    <Text style={styles.errorText}>{errors.password}</Text>
-                                )}
                             </View>
 
                             {/* Confirm Password Input */}
@@ -232,23 +378,22 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                 <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Confirm Password</Text>
                                 <View style={styles.passwordContainer}>
                                     <TextInput
-                                        style={[styles.textInput, { 
+                                        style={[styles.textInput, {
                                             flex: 1,
                                             color: colorPalette.grey[900],
-                                            borderBottomColor: errors.confirmPassword ? '#EF4444' : colorPalette.grey[300],
+                                            borderBottomColor: colorPalette.grey[300],
                                         }]}
                                         value={confirmPassword}
                                         onChangeText={(text) => {
                                             setConfirmPassword(text);
-                                            if (errors.confirmPassword) {
-                                                setErrors({ ...errors, confirmPassword: '' });
-                                            }
+                                            setError(null);
                                         }}
                                         placeholder="Confirm your password"
                                         placeholderTextColor={colorPalette.grey[400]}
                                         secureTextEntry={!showConfirmPassword}
                                         autoCapitalize="none"
                                         autoComplete="password-new"
+                                        editable={!loading}
                                     />
                                     <TouchableOpacity
                                         onPress={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -262,17 +407,14 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                         />
                                     </TouchableOpacity>
                                 </View>
-                                {errors.confirmPassword && (
-                                    <Text style={styles.errorText}>{errors.confirmPassword}</Text>
-                                )}
                             </View>
 
                             {/* Password Hint */}
                             <View style={styles.passwordHint}>
-                                <Ionicons 
-                                    name="information-circle-outline" 
-                                    size={16} 
-                                    color={colorPalette.grey[600]} 
+                                <Ionicons
+                                    name="information-circle-outline"
+                                    size={16}
+                                    color={colorPalette.grey[600]}
                                 />
                                 <Text style={[styles.passwordHintText, { color: colorPalette.grey[600] }]}>
                                     Password must be at least 8 characters long
@@ -281,7 +423,7 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
 
                             {/* Create Account Button */}
                             <TouchableOpacity
-                                style={[styles.createButton, { 
+                                style={[styles.createButton, {
                                     backgroundColor: colors.black,
                                     opacity: (!password.trim() || !confirmPassword.trim() || loading) ? 0.5 : 1,
                                 }]}
@@ -290,7 +432,7 @@ export const RegisterStudentScreen = ({ onRegister, onBack }: RegisterStudentScr
                                 activeOpacity={0.8}
                             >
                                 {loading ? (
-                                    <Text style={[styles.createButtonText, { color: colors.white }]}>Creating...</Text>
+                                    <ActivityIndicator color={colors.white} />
                                 ) : (
                                     <Text style={[styles.createButtonText, { color: colors.white }]}>CREATE ACCOUNT</Text>
                                 )}
@@ -343,6 +485,42 @@ const styles = StyleSheet.create({
         paddingHorizontal: layout.spacing.xl,
         paddingTop: layout.spacing.xxl * 2,
     },
+    errorWrapper: {
+        marginBottom: layout.spacing.lg,
+    },
+    errorContainer: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        padding: layout.spacing.md,
+        borderRadius: layout.borderRadius.md,
+        marginBottom: layout.spacing.md,
+        gap: layout.spacing.sm,
+    },
+    errorText: {
+        flex: 1,
+        fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
+        flexWrap: 'wrap',
+    },
+    portalButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 48,
+        borderRadius: 24,
+        borderWidth: 1.5,
+        paddingHorizontal: layout.spacing.lg,
+        paddingVertical: layout.spacing.sm,
+        gap: layout.spacing.sm,
+    },
+    portalButtonIcon: {
+        marginRight: layout.spacing.xs,
+    },
+    portalButtonText: {
+        fontSize: 14,
+        fontFamily: 'Montserrat_600SemiBold',
+        flexShrink: 1,
+    },
     inputGroup: {
         marginBottom: layout.spacing.xl,
     },
@@ -360,17 +538,57 @@ const styles = StyleSheet.create({
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        borderBottomWidth: 1,
     },
     eyeIcon: {
         padding: layout.spacing.xs,
         marginLeft: layout.spacing.xs,
+        position: 'absolute',
+        right: 0,
     },
-    errorText: {
-        fontSize: 12,
+    infoBox: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        padding: layout.spacing.md,
+        backgroundColor: '#F3F4F6',
+        borderRadius: layout.borderRadius.md,
+        marginBottom: layout.spacing.xl,
+        gap: layout.spacing.sm,
+    },
+    infoTextContainer: {
+        flex: 1,
+        flexShrink: 1,
+    },
+    infoText: {
+        fontSize: 13,
         fontFamily: 'Montserrat_400Regular',
-        color: '#EF4444',
+        lineHeight: 18,
+        marginBottom: layout.spacing.sm,
+        flexWrap: 'wrap',
+    },
+    infoLink: {
         marginTop: layout.spacing.xs,
+    },
+    infoLinkText: {
+        fontSize: 13,
+        fontFamily: 'Montserrat_600SemiBold',
+        textDecorationLine: 'underline',
+    },
+    verifiedBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: layout.spacing.md,
+        borderRadius: layout.borderRadius.md,
+        marginBottom: layout.spacing.xl,
+        gap: layout.spacing.sm,
+    },
+    verifiedInfo: {
+        flex: 1,
+        flexShrink: 1,
+    },
+    verifiedText: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_600SemiBold',
+        flexWrap: 'wrap',
     },
     continueButton: {
         height: 56,
@@ -390,11 +608,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: layout.spacing.sm,
         marginBottom: layout.spacing.xl,
+        gap: layout.spacing.xs,
     },
     passwordHintText: {
         fontSize: 12,
         fontFamily: 'Montserrat_400Regular',
-        marginLeft: layout.spacing.xs,
     },
     createButton: {
         height: 56,

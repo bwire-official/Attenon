@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "main": "index.js",
-    "icon": "./assets/attenon logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -20,13 +20,18 @@
     "android": {
       "package": "com.attenon.mobile",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/attenon logo.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
     },
     "web": {
-      "favicon": "./assets/attenon logo.png"
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2c901cc4-c0e9-4ffd-96ef-cd6dd8d15b62"
+      }
     }
   }
 }

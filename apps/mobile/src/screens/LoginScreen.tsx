@@ -6,25 +6,33 @@ import { ScreenWrapper } from '../components/ScreenWrapper';
 import { InstructorLoginScreen } from './InstructorLoginScreen';
 import { StudentLoginScreen } from './StudentLoginScreen';
 import { RegisterStudentScreen } from './RegisterStudentScreen';
+import { StudentVerifyEmailScreen } from './StudentVerifyEmailScreen';
+import { FaceSetupScreen } from './FaceSetupScreen';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { getCurrentUser } from '../services/session';
 
 interface LoginScreenProps {
     onLogin?: (role: 'student' | 'instructor') => void;
     onNavigateToForgotPassword?: () => void;
     onNavigateToInstructorForgotPassword?: () => void;
-    onEmailVerificationNeeded?: (email: string) => void;
 }
 
-export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToInstructorForgotPassword, onEmailVerificationNeeded }: LoginScreenProps) => {
+export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToInstructorForgotPassword }: LoginScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const [showInstructorLogin, setShowInstructorLogin] = useState(false);
     const [showStudentLogin, setShowStudentLogin] = useState(false);
     const [showRegister, setShowRegister] = useState(false);
     const [showRoleSelection, setShowRoleSelection] = useState(false);
-    
+    const [showEmailVerification, setShowEmailVerification] = useState(false);
+    const [showFaceSetup, setShowFaceSetup] = useState(false);
+
+    // Registration state
+    const [registrationEmail, setRegistrationEmail] = useState('');
+    const [registrationRole, setRegistrationRole] = useState<'student' | 'instructor'>('student');
+
     const handleSignInClick = () => {
         setShowRoleSelection(true);
     };
@@ -65,27 +73,98 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
         setShowRegister(false);
     };
 
-    const handleRegister = (data: any) => {
-        console.log('Student registered:', data);
-        // Navigate to email verification instead of directly logging in
-        onEmailVerificationNeeded?.(data.email);
+    const handleRegister = (email: string, role: 'student' | 'instructor') => {
+        console.log('Student registered:', email, role);
+        // Store registration data and navigate to email verification
+        setRegistrationEmail(email);
+        setRegistrationRole(role);
+        setShowRegister(false);
+        setShowEmailVerification(true);
     };
+
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleEmailVerified = async () => {
+        console.log('Email verified for:', registrationEmail);
+        setShowEmailVerification(false);
+        setIsLoading(true);
+        setError(null);
+
+        try {
+            // Fetch user profile to get their actual role from database
+            const user = await getCurrentUser();
+
+            if (!user) {
+                console.error('Failed to fetch user profile after verification');
+                setError('Failed to retrieve user profile.');
+                return;
+            }
+
+            // Route based on actual role from database
+            if (user.role === 'student') {
+                // Students go to face setup screen (can be skipped)
+                setShowFaceSetup(true);
+            } else if (user.role === 'instructor') {
+                // Instructors go directly to instructor dashboard
+                onLogin?.('instructor');
+            }
+        } catch (err) {
+            console.error('Error in handleEmailVerified:', err);
+            setError('An unexpected error occurred.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleFaceSetupComplete = () => {
+        console.log('Face setup completed');
+        setShowFaceSetup(false);
+        // Navigate to student dashboard
+        onLogin?.('student');
+    };
+
+    const handleFaceSetupSkip = () => {
+        console.log('Face setup skipped');
+        setShowFaceSetup(false);
+        // Navigate to student dashboard even if skipped
+        onLogin?.('student');
+    };
+
+    const handleEmailVerificationBack = () => {
+        setShowEmailVerification(false);
+        setShowRegister(true);
+    };
+
+    if (showFaceSetup) {
+        return <FaceSetupScreen onComplete={handleFaceSetupComplete} onSkip={handleFaceSetupSkip} />;
+    }
+
+    if (showEmailVerification) {
+        return (
+            <StudentVerifyEmailScreen
+                email={registrationEmail}
+                onBack={handleEmailVerificationBack}
+                onCodeVerified={handleEmailVerified}
+            />
+        );
+    }
 
     if (showRegister) {
         return <RegisterStudentScreen onRegister={handleRegister} onBack={handleRegisterBack} />;
     }
 
     if (showInstructorLogin) {
-        return <InstructorLoginScreen 
-          onLogin={handleInstructorLogin} 
-          onBack={handleBack}
-          onForgotPassword={onNavigateToInstructorForgotPassword}
+        return <InstructorLoginScreen
+            onLogin={handleInstructorLogin}
+            onBack={handleBack}
+            onForgotPassword={onNavigateToInstructorForgotPassword}
         />;
     }
 
     if (showStudentLogin) {
-        return <StudentLoginScreen 
-            onLogin={handleStudentLogin} 
+        return <StudentLoginScreen
+            onLogin={handleStudentLogin}
             onBack={handleStudentBack}
             onForgotPassword={onNavigateToForgotPassword}
         />;
@@ -95,18 +174,18 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
         return (
             <View style={styles.roleSelectionContainer}>
                 {/* Header Section */}
-                <View style={[styles.roleHeaderSection, { 
+                <View style={[styles.roleHeaderSection, {
                     backgroundColor: colors.black,
-                    paddingTop: insets.top + layout.spacing.md 
+                    paddingTop: insets.top + layout.spacing.md
                 }]}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         onPress={() => setShowRoleSelection(false)}
                         style={styles.roleBackButton}
                         activeOpacity={0.7}
                     >
-                        <Ionicons 
-                            name="arrow-back" 
-                            size={24} 
+                        <Ionicons
+                            name="arrow-back"
+                            size={24}
                             color={colors.white}
                         />
                     </TouchableOpacity>
@@ -121,7 +200,7 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                     style={[styles.roleFormSection, { backgroundColor: colors.white }]}
                 >
-                    <ScrollView 
+                    <ScrollView
                         contentContainerStyle={[
                             styles.roleFormContent,
                             { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -134,8 +213,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
                         </Text>
 
                         <View style={styles.roleButtonsContainer}>
-                            <TouchableOpacity  
-                                style={[styles.roleButton, styles.roleButtonPrimary, { 
+                            <TouchableOpacity
+                                style={[styles.roleButton, styles.roleButtonPrimary, {
                                     backgroundColor: colors.black,
                                 }]}
                                 onPress={handleInstructorLoginClick}
@@ -145,8 +224,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
                                 <Text style={[styles.roleButtonText, { color: colors.white }]}>Continue as Instructor</Text>
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
-                                style={[styles.roleButton, styles.roleButtonSecondary, { 
+                            <TouchableOpacity
+                                style={[styles.roleButton, styles.roleButtonSecondary, {
                                     backgroundColor: 'transparent',
                                     borderColor: colors.black,
                                 }]}
@@ -171,8 +250,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
             <View style={[styles.content, { backgroundColor: colors.background }]}>
                 {/* Logo */}
                 <View style={styles.header}>
-                    <Image 
-                        source={require('../../assets/attenon logo.png')} 
+                    <Image
+                        source={require('../../assets/attenon logo.png')}
                         style={[
                             styles.logo,
                             { tintColor: isDark ? colorPalette.grey[100] : colors.text.primary }
@@ -186,8 +265,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
 
                 {/* Login Buttons */}
                 <View style={styles.buttonsContainer}>
-                    <TouchableOpacity  
-                        style={[styles.loginButton, styles.loginButtonPrimary, { 
+                    <TouchableOpacity
+                        style={[styles.loginButton, styles.loginButtonPrimary, {
                             backgroundColor: isDark ? colorPalette.grey[100] : colors.black,
                             shadowColor: isDark ? colorPalette.grey[100] : colors.black,
                         }]}
@@ -197,8 +276,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
                         <Text style={[styles.loginButtonText, styles.loginButtonTextPrimary, { color: isDark ? colors.black : colors.white }]}>SIGN IN</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
-                        style={[styles.loginButton, styles.loginButtonSecondary, { 
+                    <TouchableOpacity
+                        style={[styles.loginButton, styles.loginButtonSecondary, {
                             backgroundColor: 'transparent',
                             borderColor: isDark ? colorPalette.grey[100] : colors.black,
                         }]}

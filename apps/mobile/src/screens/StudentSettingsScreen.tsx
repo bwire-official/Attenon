@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenWrapper } from '../components/ScreenWrapper';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentProfile, logout } from '../services/auth';
+import { hasPIN, isBiometricEnabled, setBiometricEnabled as saveBiometricEnabled, checkBiometricAvailability, deletePIN, canEnableBiometrics, authenticateWithBiometric } from '../services/security';
 import type { Profile } from '../lib/supabase';
 
 interface StudentSettingsScreenProps {
     onBack?: () => void;
     onLogout?: () => void;
+    onNavigateToPINSetup?: () => void;
 }
 
 interface SettingItem {
@@ -26,20 +28,20 @@ interface SettingItem {
     danger?: boolean;
 }
 
-export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScreenProps) => {
+export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }: StudentSettingsScreenProps) => {
     const { colors, isDark } = useTheme();
-    const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [notificationsEnabled, setNotificationsEnabled] = useState(true);
     const [emailNotifications, setEmailNotifications] = useState(true);
     const [biometricEnabled, setBiometricEnabled] = useState(false);
-
-    const isSmallScreen = SCREEN_WIDTH < 375;
-    const isTablet = SCREEN_WIDTH >= 768;
+    const [hasPinSet, setHasPinSet] = useState(false);
+    const [biometricAvailable, setBiometricAvailable] = useState(false);
 
     useEffect(() => {
         loadProfile();
+        loadSecuritySettings();
     }, []);
 
     const loadProfile = async () => {
@@ -51,6 +53,107 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
         } finally {
             setLoading(false);
         }
+    };
+
+    const loadSecuritySettings = async () => {
+        try {
+            const pinExists = await hasPIN();
+            const biometric = await isBiometricEnabled();
+            const available = await checkBiometricAvailability();
+
+            setHasPinSet(pinExists);
+            setBiometricEnabled(biometric);
+            setBiometricAvailable(available.available);
+        } catch (error) {
+            console.error('Error loading security settings:', error);
+        }
+    };
+
+    const handleSetupPIN = () => {
+        if (hasPinSet) {
+            Alert.alert(
+                'PIN Already Set',
+                'You already have a PIN set. Would you like to change it?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Change PIN',
+                        onPress: () => {
+                            onNavigateToPINSetup?.();
+                        },
+                    },
+                ]
+            );
+        } else {
+            onNavigateToPINSetup?.();
+        }
+    };
+
+    const handleBiometricToggle = async (value: boolean) => {
+        if (value) {
+            const canEnable = await canEnableBiometrics();
+            if (!canEnable.canEnable) {
+                Alert.alert(
+                    canEnable.error?.includes('PIN') ? 'PIN Required' : 'Not Available',
+                    canEnable.error || 'Cannot enable biometrics.',
+                    canEnable.error?.includes('PIN') ? [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Setup PIN',
+                            onPress: () => {
+                                onNavigateToPINSetup?.();
+                            },
+                        },
+                    ] : [{ text: 'OK' }]
+                );
+                return;
+            }
+
+            const biometricSuccess = await authenticateWithBiometric();
+            if (!biometricSuccess) {
+                Alert.alert('Error', 'Biometric authentication failed. Please try again.');
+                return;
+            }
+
+            const success = await saveBiometricEnabled(true);
+            if (success) {
+                setBiometricEnabled(true);
+                Alert.alert('Success', 'Biometric authentication enabled successfully.');
+            } else {
+                Alert.alert('Error', 'Failed to save biometric settings.');
+            }
+        } else {
+            const success = await saveBiometricEnabled(false);
+            if (success) {
+                setBiometricEnabled(false);
+            } else {
+                Alert.alert('Error', 'Failed to update biometric settings.');
+            }
+        }
+    };
+
+    const handleRemovePIN = () => {
+        Alert.alert(
+            'Remove PIN',
+            'Are you sure you want to remove your PIN? This will also disable biometrics.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const success = await deletePIN();
+                        if (success) {
+                            setHasPinSet(false);
+                            setBiometricEnabled(false);
+                            Alert.alert('Success', 'PIN has been removed.');
+                        } else {
+                            Alert.alert('Error', 'Failed to remove PIN.');
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const handleLogout = () => {
@@ -79,7 +182,6 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
     };
 
     const handleFaceRegistration = () => {
-        // Navigate to face registration screen
         Alert.alert('Face Registration', 'This feature will be available soon.');
     };
 
@@ -109,11 +211,20 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
     const accountSettings: SettingItem[] = [
         {
             id: 'face-registration',
-            icon: 'face-recognition',
-            title: 'Face Registration',
+            icon: 'scan-outline',
+            title: 'Face Verification',
             subtitle: profile?.is_face_registered ? 'Registered' : 'Not Registered',
             type: 'navigation',
             onPress: handleFaceRegistration,
+            showChevron: true,
+        },
+        {
+            id: 'setup-pin',
+            icon: 'keypad-outline',
+            title: 'Setup PIN',
+            subtitle: hasPinSet ? 'Change or remove PIN' : 'Set up app lock PIN',
+            type: 'navigation',
+            onPress: handleSetupPIN,
             showChevron: true,
         },
         {
@@ -144,6 +255,20 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
             type: 'toggle',
             value: emailNotifications,
             onToggle: setEmailNotifications,
+        },
+    ];
+
+    const securitySettings: SettingItem[] = [
+        {
+            id: 'biometrics',
+            icon: 'finger-print-outline',
+            title: 'Biometrics',
+            subtitle: biometricAvailable
+                ? (biometricEnabled ? 'Enabled' : 'Use fingerprint or Face ID')
+                : 'Not available on this device',
+            type: 'toggle',
+            value: biometricEnabled,
+            onToggle: handleBiometricToggle,
         },
     ];
 
@@ -188,11 +313,15 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
 
     const renderSettingItem = (item: SettingItem) => {
         const iconColor = item.danger
-            ? (isDark ? colorPalette.grey[300] : '#EF4444')
-            : (isDark ? colorPalette.grey[100] : colors.text.primary);
+            ? '#EF4444'
+            : (isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600]);
+
+        const iconBgColor = item.danger
+            ? (isDark ? '#7F1D1D' : '#FEE2E2')
+            : (isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100]);
 
         const textColor = item.danger
-            ? (isDark ? colorPalette.grey[300] : '#EF4444')
+            ? '#EF4444'
             : colors.text.primary;
 
         return (
@@ -202,8 +331,6 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
                     styles.settingItem,
                     {
                         backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                        borderBottomWidth: 1,
-                        borderBottomColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200],
                     },
                 ]}
                 onPress={item.onPress}
@@ -215,9 +342,7 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
                         style={[
                             styles.iconContainer,
                             {
-                                backgroundColor: item.danger
-                                    ? (isDark ? colorPalette.grey[800] : '#fee')
-                                    : (isDark ? colorPalette.grey[800] : colorPalette.grey[100]),
+                                backgroundColor: iconBgColor,
                             },
                         ]}
                     >
@@ -261,7 +386,9 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
         return (
             <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.text.secondary }]}>{title}</Text>
-                <View style={styles.sectionContent}>
+                <View style={[styles.sectionContent, {
+                    backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                }]}>
                     {items.map((item) => renderSettingItem(item))}
                 </View>
             </View>
@@ -270,102 +397,147 @@ export const StudentSettingsScreen = ({ onBack, onLogout }: StudentSettingsScree
 
     if (loading) {
         return (
-            <ScreenWrapper>
-                <View style={styles.loadingContainer}>
-                    <Text style={[styles.loadingText, { color: colors.text.secondary }]}>Loading...</Text>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <View style={[styles.headerSection, {
+                    backgroundColor: colors.black,
+                    paddingTop: insets.top + layout.spacing.md,
+                }]}>
+                    <View style={styles.headerContent}>
+                        <TouchableOpacity
+                            style={styles.backButton}
+                            onPress={onBack}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="arrow-back" size={24} color={colors.white} />
+                        </TouchableOpacity>
+                        <Text style={[styles.headerTitle, { color: colors.white }]}>Settings</Text>
+                        <View style={styles.headerRight} />
+                    </View>
                 </View>
-            </ScreenWrapper>
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+            </View>
         );
     }
 
     return (
-        <ScreenWrapper>
-            <View style={[styles.header, { 
-                backgroundColor: colors.background,
-                borderBottomWidth: 1,
-                borderBottomColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200],
-            }]}>
-                <TouchableOpacity
-                    onPress={onBack}
-                    style={styles.backButton}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons
-                        name="arrow-back"
-                        size={24}
-                        color={isDark ? colorPalette.grey[100] : colors.text.primary}
-                    />
-                </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Settings</Text>
-                <View style={styles.headerRight} />
+        <View style={[styles.container, { backgroundColor: colors.background, flex: 1 }]}>
+            {/* Header Section */}
+            <View
+                style={[
+                    styles.headerSection,
+                    {
+                        backgroundColor: colors.black,
+                        paddingTop: insets.top + layout.spacing.md,
+                    },
+                ]}
+            >
+                <View style={styles.headerContent}>
+                    <TouchableOpacity
+                        style={styles.backButton}
+                        onPress={onBack}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="arrow-back" size={24} color={colors.white} />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: colors.white }]}>Settings</Text>
+                    <View style={styles.headerRight} />
+                </View>
             </View>
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {/* Profile Section */}
-                <View style={[styles.profileSection, { backgroundColor: isDark ? colorPalette.grey[900] : colors.white }]}>
-                    <View style={[styles.avatarContainer, {
-                        backgroundColor: isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100],
-                    }]}>
-                        <Ionicons
-                            name="person"
-                            size={40}
-                            color={isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600]}
-                        />
-                    </View>
-                    <Text style={[styles.profileName, { color: colors.text.primary }]}>
-                        {profile?.full_name || 'Student'}
-                    </Text>
-                    <Text style={[styles.profileEmail, { color: colors.text.secondary }]}>
-                        {profile?.email || 'email@example.com'}
-                    </Text>
-                    {profile?.reg_number && (
-                        <Text style={[styles.profileRegNumber, { color: colors.text.tertiary }]}>
-                            {profile.reg_number}
-                        </Text>
-                    )}
-                </View>
-
-                {/* Account Settings */}
-                {renderSection('Account', accountSettings)}
-
-                {/* Notifications */}
-                {renderSection('Notifications', notificationSettings)}
-
-                {/* Privacy & Security */}
-                {renderSection('Privacy & Security', privacySettings)}
-
-                {/* About */}
-                {renderSection('About', aboutSettings)}
-
-                {/* Logout Button */}
-                <TouchableOpacity
-                    style={[styles.logoutButton, {
-                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                    }]}
-                    onPress={handleLogout}
-                    activeOpacity={0.7}
+            {/* Content Section */}
+            <View style={[styles.contentSection, {
+                backgroundColor: isDark ? colorPalette.grey[900] : colors.white
+            }]}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) },
+                    ]}
+                    showsVerticalScrollIndicator={false}
+                    bounces={true}
                 >
-                    <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-                    <Text style={styles.logoutText}>Logout</Text>
-                </TouchableOpacity>
+                    {/* Profile Section */}
+                    <View style={[styles.profileSection, {
+                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white
+                    }]}>
+                        <View style={[styles.avatarContainer, {
+                            backgroundColor: isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100],
+                        }]}>
+                            <Ionicons
+                                name="person"
+                                size={40}
+                                color={isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600]}
+                            />
+                        </View>
+                        <Text style={[styles.profileName, { color: colors.text.primary }]}>
+                            {profile?.full_name || 'Student'}
+                        </Text>
+                        <Text style={[styles.profileEmail, { color: colors.text.secondary }]}>
+                            {profile?.email || 'email@example.com'}
+                        </Text>
+                        {profile?.reg_number && (
+                            <Text style={[styles.profileRegNumber, { color: colors.text.tertiary }]}>
+                                {profile.reg_number}
+                            </Text>
+                        )}
+                    </View>
 
-                <View style={{ height: layout.spacing.xl }} />
-            </ScrollView>
-        </ScreenWrapper>
+                    {/* Account Settings */}
+                    {renderSection('Account', accountSettings)}
+
+                    {/* Security */}
+                    {renderSection('Security', securitySettings)}
+
+                    {/* Notifications */}
+                    {renderSection('Notifications', notificationSettings)}
+
+                    {/* Privacy & Security */}
+                    {renderSection('Privacy & Security', privacySettings)}
+
+                    {/* About */}
+                    {renderSection('About', aboutSettings)}
+
+                    {/* Logout Button */}
+                    <TouchableOpacity
+                        style={[styles.logoutButton, {
+                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                        }]}
+                        onPress={handleLogout}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+                        <Text style={styles.logoutText}>Logout</Text>
+                    </TouchableOpacity>
+                </ScrollView>
+            </View>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    header: {
+    container: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    headerSection: {
+        paddingHorizontal: layout.spacing.xl,
+        paddingBottom: layout.spacing.xxl * 2,
+        overflow: 'hidden',
+    },
+    headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: layout.spacing.md,
-        paddingVertical: layout.spacing.md,
+        marginTop: layout.spacing.md,
     },
     backButton: {
         width: 40,
@@ -374,36 +546,34 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
     },
     headerTitle: {
-        fontSize: 18,
-        fontFamily: 'Montserrat_600SemiBold',
+        fontSize: 32,
+        fontFamily: 'Montserrat_700Bold',
         flex: 1,
         textAlign: 'center',
     },
     headerRight: {
         width: 40,
     },
+    contentSection: {
+        flex: 1,
+        marginTop: -35,
+        borderTopLeftRadius: 50,
+        borderTopRightRadius: 50,
+        overflow: 'hidden',
+    },
     scrollView: {
         flex: 1,
     },
     scrollContent: {
-        paddingBottom: layout.spacing.xl,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        fontSize: 16,
+        paddingHorizontal: layout.spacing.xl,
+        paddingTop: layout.spacing.xxl * 2,
     },
     profileSection: {
         alignItems: 'center',
         paddingVertical: layout.spacing.xl,
         paddingHorizontal: layout.spacing.lg,
-        marginBottom: layout.spacing.lg,
+        marginBottom: layout.spacing.xl,
         borderRadius: layout.borderRadius.lg,
-        marginHorizontal: layout.spacing.md,
-        marginTop: layout.spacing.md,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
@@ -425,14 +595,15 @@ const styles = StyleSheet.create({
     },
     profileEmail: {
         fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
         marginBottom: layout.spacing.xs,
     },
     profileRegNumber: {
         fontSize: 12,
+        fontFamily: 'Montserrat_400Regular',
     },
     section: {
-        marginBottom: layout.spacing.lg,
-        paddingHorizontal: layout.spacing.md,
+        marginBottom: layout.spacing.xl,
     },
     sectionTitle: {
         fontSize: 12,
@@ -443,8 +614,13 @@ const styles = StyleSheet.create({
         marginLeft: layout.spacing.xs,
     },
     sectionContent: {
-        borderRadius: layout.borderRadius.md,
+        borderRadius: layout.borderRadius.lg,
         overflow: 'hidden',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
     settingItem: {
         flexDirection: 'row',
@@ -452,6 +628,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingVertical: layout.spacing.md,
         paddingHorizontal: layout.spacing.md,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: 'rgba(0, 0, 0, 0.1)',
     },
     settingLeft: {
         flexDirection: 'row',
@@ -471,11 +649,12 @@ const styles = StyleSheet.create({
     },
     settingTitle: {
         fontSize: 16,
-        fontFamily: 'Montserrat_500Medium',
+        fontFamily: 'Montserrat_600SemiBold',
         marginBottom: 2,
     },
     settingSubtitle: {
         fontSize: 12,
+        fontFamily: 'Montserrat_400Regular',
     },
     settingRight: {
         flexDirection: 'row',
@@ -487,9 +666,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: layout.spacing.md,
-        marginHorizontal: layout.spacing.md,
-        borderRadius: layout.borderRadius.md,
+        borderRadius: layout.borderRadius.lg,
         gap: layout.spacing.sm,
+        marginTop: layout.spacing.md,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,

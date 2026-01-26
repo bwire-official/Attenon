@@ -1,9 +1,22 @@
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import Constants from 'expo-constants';
 
-const supabaseUrl = 'https://jvcgepjqhbczpaqaajjw.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2Y2dlcGpxaGJjenBhcWFhamp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkyODY2NzgsImV4cCI6MjA4NDg2MjY3OH0.Ld8xUUcdcjqFRyDyWCu9cM6CqhLvxPbidvNBDXaCgRE';
+// Get environment variables from Expo Constants
+// In Expo, use EXPO_PUBLIC_ prefix for public env vars
+const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || 
+                    process.env.EXPO_PUBLIC_SUPABASE_URL || 
+                    '';
+const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey || 
+                        process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+                        '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+        'Missing Supabase configuration. Please set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file or app.json extra config.'
+    );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
@@ -24,6 +37,9 @@ export interface Profile {
     face_encoding: number[] | null;
     is_face_registered: boolean;
     avatar_url: string | null;
+    department: string | null;
+    faculty: string | null;
+    level: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -55,6 +71,10 @@ export interface AttendanceLog {
     status: 'present' | 'late' | 'absent';
     confidence: number | null;
     created_at: string;
+    classes?: {
+        course_code: string;
+        title: string;
+    } | null;
 }
 
 export interface AttendanceSession {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenWrapper } from '../components/ScreenWrapper';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
@@ -64,9 +64,9 @@ const mockNotifications: Notification[] = [
 
 export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
     const { colors, isDark } = useTheme();
+    const insets = useSafeAreaInsets();
     const { width: SCREEN_WIDTH } = useWindowDimensions();
     const isTablet = SCREEN_WIDTH >= 768;
-    const isSmallScreen = SCREEN_WIDTH < 375;
 
     const getNotificationIcon = (type: Notification['type']) => {
         switch (type) {
@@ -86,150 +86,146 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
     const getNotificationColor = (type: Notification['type']) => {
         switch (type) {
             case 'attendance':
-                return isDark ? colorPalette.grey[100] : colors.text.primary;
+                return isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600];
             case 'course':
-                return isDark ? colorPalette.grey[100] : colors.text.primary;
+                return isDark ? colorPalette.inkBlack[300] : colorPalette.inkBlack[600];
             case 'student':
-                return isDark ? colorPalette.grey[100] : colors.text.primary;
+                return isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600];
             case 'system':
-                return isDark ? colorPalette.grey[100] : colors.text.primary;
+                return isDark ? colorPalette.grey[400] : colorPalette.grey[600];
             default:
                 return colors.text.primary;
         }
     };
 
+    const getNotificationBg = (type: Notification['type']) => {
+        switch (type) {
+            case 'attendance':
+                return isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100];
+            case 'course':
+                return isDark ? colorPalette.inkBlack[900] : colorPalette.inkBlack[100];
+            case 'student':
+                return isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100];
+            case 'system':
+                return isDark ? colorPalette.grey[800] : colorPalette.grey[200];
+            default:
+                return isDark ? colorPalette.grey[800] : colorPalette.grey[100];
+        }
+    };
+
+
+
     return (
-        <ScreenWrapper>
-            <View style={styles.header}>
-                <TouchableOpacity 
-                    onPress={onBack}
-                    style={styles.backButton}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
-                        color={colors.text.primary} 
-                    />
-                </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: colors.text.primary }]}>Notifications</Text>
-                <View style={styles.headerRight} />
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Header Section */}
+            <View
+                style={[
+                    styles.headerSection,
+                    {
+                        backgroundColor: colors.black,
+                        paddingTop: insets.top + layout.spacing.md,
+                    },
+                ]}
+            >
+                <View style={styles.headerContent}>
+                    <TouchableOpacity
+                        onPress={onBack}
+                        style={styles.backButton}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons
+                            name="arrow-back"
+                            size={24}
+                            color={colors.white}
+                        />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: colors.white }]}>
+                        Notifications
+                    </Text>
+                    <View style={styles.headerRight} />
+                </View>
             </View>
 
-            <ScrollView 
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {/* Stats Summary */}
-                <View style={styles.statsSummary}>
-                    <View style={[styles.statBox, { 
-                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                    }]}>
-                        <Ionicons 
-                            name="trending-up" 
-                            size={isTablet ? 28 : 24} 
-                            color={colors.text.primary} 
-                        />
-                        <Text style={[styles.statNumber, { color: colors.text.primary }]}>92%</Text>
-                        <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Weekly Attendance</Text>
-                    </View>
-                    <View style={[styles.statBox, { 
-                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                    }]}>
-                        <Ionicons 
-                            name="notifications" 
-                            size={isTablet ? 28 : 24} 
-                            color={colors.text.primary} 
-                        />
-                        <Text style={[styles.statNumber, { color: colors.text.primary }]}>3</Text>
-                        <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Unread</Text>
-                    </View>
-                    <View style={[styles.statBox, { 
-                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                    }]}>
-                        <Ionicons 
-                            name="checkmark-circle" 
-                            size={isTablet ? 28 : 24} 
-                            color={colors.text.primary} 
-                        />
-                        <Text style={[styles.statNumber, { color: colors.text.primary }]}>2</Text>
-                        <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Read</Text>
-                    </View>
-                </View>
+            {/* Content Section */}
+            <View style={[styles.contentSection, { backgroundColor: colors.white }]}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                >
 
-                {/* Notifications List */}
-                <View style={styles.notificationsList}>
-                    {mockNotifications.map((notification) => (
-                        <TouchableOpacity
-                            key={notification.id}
-                            style={[styles.notificationItem, {
-                                backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                                borderLeftColor: notification.read 
-                                    ? 'transparent' 
-                                    : (isDark ? colorPalette.grey[100] : colors.text.primary),
-                            }]}
-                            activeOpacity={0.7}
-                        >
-                            <View style={[styles.notificationIconWrapper, {
-                                backgroundColor: isDark ? colorPalette.grey[800] : colorPalette.grey[100],
-                            }]}>
-                                <Ionicons 
-                                    name={getNotificationIcon(notification.type) as any} 
-                                    size={isTablet ? 24 : 20} 
-                                    color={getNotificationColor(notification.type)} 
-                                />
-                            </View>
-                            <View style={styles.notificationContent}>
-                                <View style={styles.notificationHeader}>
-                                    <Text style={[styles.notificationTitle, { 
-                                        color: colors.text.primary,
-                                        fontFamily: notification.read ? 'Montserrat_500Medium' : 'Montserrat_600SemiBold',
-                                    }]}>
-                                        {notification.title}
-                                    </Text>
-                                    {notification.value && (
-                                        <View style={[styles.valueBadge, {
-                                            backgroundColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200],
-                                        }]}>
-                                            <Text style={[styles.valueText, { 
-                                                color: colors.text.primary,
-                                            }]}>
-                                                {notification.value}
-                                            </Text>
-                                        </View>
-                                    )}
+
+                    <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                        Recent Updates
+                    </Text>
+
+                    {/* Notifications List */}
+                    <View style={styles.notificationsList}>
+                        {mockNotifications.map((notification) => (
+                            <TouchableOpacity
+                                key={notification.id}
+                                style={[styles.notificationItem, {
+                                    backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                                    opacity: notification.read ? 0.7 : 1,
+                                }]}
+                                activeOpacity={0.7}
+                            >
+                                <View style={[styles.notificationIconWrapper, {
+                                    backgroundColor: getNotificationBg(notification.type),
+                                }]}>
+                                    <Ionicons
+                                        name={getNotificationIcon(notification.type) as any}
+                                        size={24}
+                                        color={getNotificationColor(notification.type)}
+                                    />
                                 </View>
-                                <Text style={[styles.notificationMessage, { 
-                                    color: colors.text.secondary,
-                                }]}>
-                                    {notification.message}
-                                </Text>
-                                <Text style={[styles.notificationTime, { 
-                                    color: colors.text.tertiary,
-                                }]}>
-                                    {notification.time}
-                                </Text>
-                            </View>
-                            {!notification.read && (
-                                <View style={[styles.unreadDot, {
-                                    backgroundColor: isDark ? colorPalette.grey[100] : colors.text.primary,
-                                }]} />
-                            )}
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </ScrollView>
-        </ScreenWrapper>
+                                <View style={styles.notificationContent}>
+                                    <View style={styles.notificationHeader}>
+                                        <Text style={[styles.notificationTitle, {
+                                            color: colors.text.primary,
+                                            fontFamily: notification.read ? 'Montserrat_500Medium' : 'Montserrat_600SemiBold',
+                                        }]} numberOfLines={1}>
+                                            {notification.title}
+                                        </Text>
+                                        <Text style={[styles.notificationTime, {
+                                            color: colors.text.tertiary,
+                                        }]}>
+                                            {notification.time}
+                                        </Text>
+                                    </View>
+                                    <Text style={[styles.notificationMessage, {
+                                        color: colors.text.secondary,
+                                    }]} numberOfLines={2}>
+                                        {notification.message}
+                                    </Text>
+                                </View>
+                                {!notification.read && (
+                                    <View style={[styles.unreadDot, {
+                                        backgroundColor: colorPalette.yellowGreen[500],
+                                    }]} />
+                                )}
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </ScrollView>
+            </View>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    header: {
+    container: {
+        flex: 1,
+    },
+    headerSection: {
+        paddingHorizontal: layout.spacing.xl,
+        paddingBottom: layout.spacing.xxl * 2,
+        overflow: 'hidden',
+    },
+    headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: layout.spacing.lg,
         marginTop: layout.spacing.md,
     },
     backButton: {
@@ -247,50 +243,35 @@ const styles = StyleSheet.create({
     headerRight: {
         width: 40,
     },
+    contentSection: {
+        flex: 1,
+        marginTop: -35,
+        borderTopLeftRadius: 50,
+        borderTopRightRadius: 50,
+        overflow: 'hidden',
+    },
     scrollView: {
         flex: 1,
     },
     scrollContent: {
+        paddingTop: layout.spacing.xxl * 2,
+        paddingHorizontal: layout.spacing.xl,
         paddingBottom: layout.spacing.xl * 2,
     },
-    statsSummary: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: layout.spacing.xl,
-        gap: layout.spacing.sm,
-    },
-    statBox: {
-        flex: 1,
-        borderRadius: layout.borderRadius.lg,
-        padding: layout.spacing.md,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 100,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    statNumber: {
-        fontSize: 24,
-        fontFamily: 'Montserrat_700Bold',
-        marginTop: layout.spacing.xs,
-        marginBottom: layout.spacing.xs / 2,
-    },
-    statLabel: {
-        fontSize: 11,
-        fontFamily: 'Montserrat_500Medium',
-        textAlign: 'center',
+
+    sectionTitle: {
+        fontSize: 18,
+        fontFamily: 'Montserrat_600SemiBold',
+        marginBottom: layout.spacing.md,
     },
     notificationsList: {
         gap: layout.spacing.md,
     },
     notificationItem: {
         flexDirection: 'row',
+        alignItems: 'center',
         borderRadius: layout.borderRadius.lg,
         padding: layout.spacing.md,
-        borderLeftWidth: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
@@ -298,9 +279,9 @@ const styles = StyleSheet.create({
         elevation: 1,
     },
     notificationIconWrapper: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: layout.spacing.md,
@@ -312,29 +293,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: layout.spacing.xs,
+        marginBottom: 2,
     },
     notificationTitle: {
-        fontSize: 15,
+        fontSize: 14,
         flex: 1,
-    },
-    valueBadge: {
-        paddingHorizontal: layout.spacing.sm,
-        paddingVertical: layout.spacing.xs / 2,
-        borderRadius: layout.borderRadius.sm,
-        marginLeft: layout.spacing.sm,
-    },
-    valueText: {
-        fontSize: 12,
-        fontFamily: 'Montserrat_700Bold',
+        marginRight: layout.spacing.sm,
     },
     notificationMessage: {
-        fontSize: 13,
+        fontSize: 12,
         lineHeight: 18,
-        marginBottom: layout.spacing.xs,
     },
     notificationTime: {
-        fontSize: 11,
+        fontSize: 10,
         fontFamily: 'Montserrat_400Regular',
     },
     unreadDot: {
@@ -342,7 +313,6 @@ const styles = StyleSheet.create({
         height: 8,
         borderRadius: 4,
         marginLeft: layout.spacing.sm,
-        alignSelf: 'center',
     },
 });
 

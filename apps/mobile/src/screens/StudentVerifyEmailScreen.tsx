@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, TextInput, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { verifyEmailWithCode, resendVerificationCode } from '../services/registration';
 
 interface StudentVerifyEmailScreenProps {
     email: string;
@@ -17,7 +18,9 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
     const insets = useSafeAreaInsets();
     const [code, setCode] = useState(['', '', '', '', '', '']);
     const [loading, setLoading] = useState(false);
+    const [resending, setResending] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const inputRefs = useRef<(TextInput | null)[]>([]);
 
     const handleCodeChange = (value: string, index: number) => {
@@ -65,7 +68,7 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
 
     const handleVerifyCode = async (codeToVerify?: string) => {
         const codeString = codeToVerify || code.join('');
-        
+
         if (codeString.length !== 6) {
             setError('Please enter the complete 6-digit code');
             return;
@@ -74,33 +77,61 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
         setLoading(true);
         setError(null);
 
-        // Simulate API call to verify email code
-        setTimeout(() => {
-            setLoading(false);
-            // For now, accept any 6-digit code. In production, verify with backend
-            if (codeString === '123456') {
-                setError('Invalid code. Please try again.');
-            } else {
-                onCodeVerified?.();
+        try {
+            const result = await verifyEmailWithCode(email, codeString);
+
+            if (!result.success) {
+                setError(result.error || 'Invalid or expired code. Please try again.');
+                return;
             }
-        }, 1500);
+
+            // Success! Navigate to next step
+            onCodeVerified?.();
+        } catch (err: any) {
+            setError(err?.message || 'An error occurred during verification.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResendCode = async () => {
+        setResending(true);
+        setError(null);
+        setSuccessMessage(null);
+
+        try {
+            const result = await resendVerificationCode(email);
+
+            if (!result.success) {
+                setError(result.error || 'Failed to resend code. Please try again.');
+                return;
+            }
+
+            setSuccessMessage('Verification code resent successfully!');
+            // Clear success message after 3 seconds
+            setTimeout(() => setSuccessMessage(null), 3000);
+        } catch (err: any) {
+            setError(err?.message || 'Failed to resend code. Please try again.');
+        } finally {
+            setResending(false);
+        }
     };
 
     return (
         <View style={styles.container}>
             {/* Header Section */}
-            <View style={[styles.headerSection, { 
+            <View style={[styles.headerSection, {
                 backgroundColor: colors.black,
-                paddingTop: insets.top + layout.spacing.md 
+                paddingTop: insets.top + layout.spacing.md
             }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={onBack}
                     style={styles.backButton}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
                         color={colors.white}
                     />
                 </TouchableOpacity>
@@ -115,7 +146,7 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.formSection, { backgroundColor: colors.white }]}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[
                         styles.formContent,
                         { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -125,14 +156,28 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
                 >
                     {/* Error Message */}
                     {error && (
-                        <View style={[styles.errorContainer, { backgroundColor: '#fee' }]}>
-                            <Ionicons 
-                                name="alert-circle" 
-                                size={20} 
-                                color="#c33" 
+                        <View style={[styles.errorContainer, { backgroundColor: '#FEE2E2' }]}>
+                            <Ionicons
+                                name="alert-circle"
+                                size={20}
+                                color="#DC2626"
                             />
-                            <Text style={[styles.errorText, { color: '#c33' }]}>
+                            <Text style={[styles.errorText, { color: '#DC2626' }]}>
                                 {error}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Success Message */}
+                    {successMessage && (
+                        <View style={[styles.successContainer, { backgroundColor: '#D1FAE5' }]}>
+                            <Ionicons
+                                name="checkmark-circle"
+                                size={20}
+                                color="#059669"
+                            />
+                            <Text style={[styles.successText, { color: '#047857' }]}>
+                                {successMessage}
                             </Text>
                         </View>
                     )}
@@ -164,7 +209,7 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
 
                     {/* Verify Button */}
                     <TouchableOpacity
-                        style={[styles.verifyButton, { 
+                        style={[styles.verifyButton, {
                             backgroundColor: colors.black,
                             opacity: (code.join('').length !== 6 || loading) ? 0.5 : 1,
                         }]}
@@ -173,20 +218,24 @@ export const StudentVerifyEmailScreen = ({ email, onBack, onCodeVerified }: Stud
                         activeOpacity={0.8}
                     >
                         {loading ? (
-                            <Text style={[styles.verifyButtonText, { color: colors.white }]}>Verifying...</Text>
+                            <ActivityIndicator color={colors.white} />
                         ) : (
                             <Text style={[styles.verifyButtonText, { color: colors.white }]}>VERIFY EMAIL</Text>
                         )}
                     </TouchableOpacity>
 
                     {/* Resend Code */}
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.resendContainer}
+                        onPress={handleResendCode}
+                        disabled={resending}
                         activeOpacity={0.7}
                     >
                         <Text style={[styles.resendText, { color: colorPalette.grey[600] }]}>
                             Didn't receive the code?{' '}
-                            <Text style={{ fontFamily: 'Montserrat_600SemiBold', color: colorPalette.grey[900] }}>Resend</Text>
+                            <Text style={{ fontFamily: 'Montserrat_600SemiBold', color: resending ? colorPalette.grey[400] : colorPalette.grey[900] }}>
+                                {resending ? 'Sending...' : 'Resend'}
+                            </Text>
                         </Text>
                     </TouchableOpacity>
                 </ScrollView>
@@ -245,9 +294,24 @@ const styles = StyleSheet.create({
     errorText: {
         flex: 1,
         fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
+    },
+    successContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: layout.spacing.md,
+        borderRadius: layout.borderRadius.md,
+        marginBottom: layout.spacing.lg,
+        gap: layout.spacing.sm,
+    },
+    successText: {
+        flex: 1,
+        fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
     },
     descriptionText: {
         fontSize: 16,
+        fontFamily: 'Montserrat_400Regular',
         textAlign: 'center',
         marginBottom: layout.spacing.xxl * 2,
         lineHeight: 22,
@@ -285,5 +349,6 @@ const styles = StyleSheet.create({
     },
     resendText: {
         fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
     },
 });

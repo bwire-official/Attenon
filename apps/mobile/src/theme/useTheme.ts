@@ -3,14 +3,13 @@ import { lightColors, darkColors } from './colors';
 import { typography } from './typography';
 
 export const useTheme = () => {
-    const colorScheme = useColorScheme();
-    // Default to light if colorScheme is null/undefined
-    const isDark = colorScheme === 'dark';
-    
+    // Force light mode
+    const isDark = false;
+
     return {
-        colors: isDark ? darkColors : lightColors,
-        isDark,
-        colorScheme: colorScheme || 'light',
+        colors: lightColors,
+        isDark: false,
+        colorScheme: 'light',
         typography,
     };
 };

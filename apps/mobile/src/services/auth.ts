@@ -60,13 +60,23 @@ export async function login({ email, password }: LoginData): Promise<AuthRespons
         });
 
         if (error) {
+            console.error('Login error:', error);
+            // Provide user-friendly error messages
+            if (error.message.includes('Invalid login credentials') || error.message.includes('invalid_credentials')) {
+                return { success: false, error: 'Invalid email or password. Please check your credentials and try again.' };
+            }
+            if (error.message.includes('Email not confirmed')) {
+                return { success: false, error: 'Please verify your email address before logging in.' };
+            }
             return { success: false, error: error.message };
         }
 
         if (!data.user) {
+            console.error('No user data returned');
             return { success: false, error: 'Failed to log in' };
         }
 
+        console.log('Login successful, fetching profile...');
         // Fetch the profile
         const { data: profile, error: profileError } = await supabase
             .from('profiles')
@@ -75,12 +85,24 @@ export async function login({ email, password }: LoginData): Promise<AuthRespons
             .single();
 
         if (profileError) {
+            console.error('Profile fetch error:', profileError);
             return { success: false, error: profileError.message };
         }
 
+        console.log('Profile fetched successfully');
         return { success: true, user: profile };
-    } catch (err) {
-        return { success: false, error: 'An unexpected error occurred' };
+    } catch (err: any) {
+        console.error('Login exception:', err);
+        console.error('Error type:', err?.constructor?.name);
+        console.error('Error message:', err?.message);
+
+        // Handle network errors
+        if (err?.message?.includes('Network request failed') || err?.message?.includes('fetch') || err?.code === 'NETWORK_ERROR') {
+            return { success: false, error: 'Network error: Please check your internet connection. If the problem persists, verify your Supabase configuration.' };
+        }
+
+        // Handle other errors
+        return { success: false, error: err?.message || 'An unexpected error occurred. Please try again.' };
     }
 }
 

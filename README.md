@@ -1,135 +1,128 @@
-# Turborepo starter
+# Attenon - Biometric Attendance System
 
-This Turborepo starter is maintained by the Turborepo core team.
+**Attenon** is a next-generation school attendance platform that uses advanced face verification technology to streamline classroom management. It eliminates proxy attendance and simplifies the tracking process for both students and instructors.
 
-## Using this example
+---
 
-Run the following command:
+## 🏛️ System Architecture
 
-```sh
-npx create-turbo@latest
+Attenon follows a **"Three-Legged"** architecture designed for security, scalability, and performance:
+
+1.  **📱 The Interface (Mobile App)**
+    *   **Tech**: React Native (Expo)
+    *   **Role**: Acts as the user terminal. It captures high-quality images, handles user sessions (Student/Instructor), and provides real-time feedback.
+    *   **Key Source**: `apps/mobile`
+
+2.  **🧠 The Brain (Supabase)**
+    *   **Tech**: PostgreSQL + pgvector + Edge Functions
+    *   **Role**: The single source of truth. It stores user profiles, class schedules, and attendance logs.
+    *   **Key Feature**: It performs the actual **face matching** by comparing vector embeddings using the `pgvector` extension.
+
+3.  **👁️ The Eye (AI API)**
+    *   **Tech**: Python (FastAPI + InsightFace + OpenCV)
+    *   **Role**: The dedicated AI processor. It receives raw images, detects faces, validates image quality (lighting/centering), and converts them into **512-dimensional vector embeddings**.
+    *   **Key Source**: `apps/api`
+
+---
+
+## 🚀 Key Features
+
+*   **Biometric Registration**: Students register their face once. The system generates a unique cryptographic face encoding (we do NOT store raw photos for matching).
+*   **Touchless Attendance**: Instructors start a session, and students simply look at the device to get marked "Present".
+*   **Dual Dashboards**:
+    *   **Students**: View attendance history, upcoming classes, and profile status.
+    *   **Instructors**: Manage classes, view live attendance sessions, and export reports.
+*   **Web Portal**: A dedicated web interface (`apps/student-portal`) for students to manage their academic profile from a browser.
+
+---
+
+## 🛠️ Technology Stack
+
+| Component | Technology | Description |
+| :--- | :--- | :--- |
+| **Monorepo** | TurboRepo | Efficient build system for handling multiple apps |
+| **Mobile** | React Native / Expo | Cross-platform mobile application |
+| **Web** | Vite / React | Fast, modern web portal for students |
+| **Backend** | Python / FastAPI | High-performance API for AI processing |
+| **AI/ML** | InsightFace / OpenCV | Industrial-grade face detection & recognition |
+| **Database** | Supabase (Postgres) | Real-time database with Vector support |
+| **Auth** | Supabase Auth | Secure JWT-based authentication |
+
+---
+
+## 📂 Project Structure
+
+```bash
+Attenon/
+├── android/                 # Native Android configuration & signing keys
+├── apps/
+│   ├── api/                 # Python FastAPI Backend (The "Eye")
+│   ├── mobile/              # React Native Expo App (The "Interface")
+│   └── student-portal/      # React Web App (Student Dashboard)
+├── packages/                # Shared internal packages
+└── docs/                    # Project documentation
 ```
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## ⚡ Getting Started
 
-### Apps and Packages
+### Prerequisites
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+*   **Node.js** 18+
+*   **Python** 3.9+
+*   **Supabase** project with `pgvector` enabled.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+### 1. Setup the Backend (AI API)
 
-### Utilities
+The API is responsible for face encoding.
 
-This Turborepo has some additional tools already setup for you:
+```bash
+cd apps/api
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+# Install dependencies
+pip install -r requirements.txt
 
-### Build
-
-To build all apps and packages, run the following command:
-
+# Start the server
+uvicorn app.main:app --reload
 ```
-cd my-turborepo
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
+### 2. Run the Mobile App
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
+```bash
+cd apps/mobile
+npm install
+
+# Run on Android Emulator or Physical Device
+npx expo start
+```
+
+### 3. Run the Student Web Portal
+
+```bash
+cd apps/student-portal
+npm install
+npm run dev
+```
+
+---
+
+## 🔒 Security & Privacy
+
+*   **Vector Storage**: We do not store user photos for identification. We store mathematical representations (vectors) of faces.
+*   **Liveness Detection**: The API includes checks for face centering, eye status, and lighting conditions to ensure high-quality, genuine captures.
+*   **Secure Auth**: All requests are authenticated using Supabase JWT tokens. User data is protected via Role-Level Security (RLS) policies.
+
+---
+
+## 🤝 Contribution
+
+This project is a monorepo managed by **TurboRepo**.
+To build all apps:
+
+```bash
 npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
 ```
-
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)

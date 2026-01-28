@@ -27,7 +27,6 @@ out/
 build
 dist
 
-
 # Debug
 npm-debug.log*
 yarn-debug.log*
@@ -36,3 +35,108 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+# ============================================
+# Python (FastAPI/Backend)
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Database files (SQLite, etc.)
+*.db
+*.sqlite
+*.sqlite3
+
+# Python logs
+*.log
+logs/
+
+# ============================================
+# React Native / Expo (Mobile)
+# ============================================
+.expo/
+.expo-shared/
+expo-env.d.ts
+web-build/
+
+# Metro bundler
+.metro-health-check*
+
+# Android build artifacts
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Android signing keys
+*.jks
+*.keystore
+!debug.keystore
+
+# iOS signing
+*.p8
+*.p12
+*.mobileprovision
+
+# Build logs
+build_debug.log
+build_error.log
+*.log
+
+# ============================================
+# Android
+# ============================================
+.gradle/
+.idea/
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.jsbundle
+
+# Gradle cache
+.gradle
+/build
+/captures
+
+# ============================================
+# IDE / Editor
+# ============================================
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# OS Files
+# ============================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================
+# Temporary / Cache
+# ============================================
+*.tmp
+*.temp
+*.cache
+.cache/

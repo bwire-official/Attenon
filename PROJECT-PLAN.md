@@ -40,7 +40,7 @@ The system follows a **"Three-Legged" architecture** to separate concerns betwee
 - **Responsibilities:**
   - Receives an image
   - Detects a face
-  - Converts it to a 128-float vector
+  - Converts it to a 512-float vector
   - Returns the vector
 - **Note:** It does not store business data
 
@@ -80,7 +80,7 @@ create table public.profiles (
   email text,
   full_name text,
   role text check (role in ('student', 'instructor')),
-  face_encoding vector(128), -- The 128 numbers from the Python AI
+  face_encoding vector(512), -- The 512 numbers from the Python AI (InsightFace)
   is_face_registered boolean default false
 );
 ```
@@ -162,7 +162,7 @@ This server acts as a middleman. It does not touch the database directly; it com
 **Process:**
 1. Detect face
 2. Check if multiple faces exist (reject if > 1)
-3. Generate 128-float vector
+3. Generate 512-float vector
 
 **Output:** Returns the vector
 
@@ -173,7 +173,7 @@ This server acts as a middleman. It does not touch the database directly; it com
 **Input:** A photo (file)
 
 **Process:**
-1. Generate 128-float vector from the live photo
+1. Generate 512-float vector from the live photo
 2. Call Supabase RPC `match_face` (see below) to find the closest vector in the DB
 
 **Output:**

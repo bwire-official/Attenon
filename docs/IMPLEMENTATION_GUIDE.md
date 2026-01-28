@@ -185,7 +185,7 @@ CREATE TABLE profiles (
     full_name TEXT,
     reg_number TEXT UNIQUE,
     role TEXT CHECK (role IN ('student', 'instructor')),
-    face_encoding VECTOR(128),
+    face_encoding VECTOR(512),
     is_face_registered BOOLEAN DEFAULT FALSE,
     avatar_url TEXT,
     department TEXT,

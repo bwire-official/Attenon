@@ -1,4 +1,5 @@
 """Security utilities for authentication and authorization."""
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -8,6 +9,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
@@ -39,25 +42,40 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def verify_token(token: str) -> dict:
-    """Verify and decode a JWT token."""
+    """
+    Verify and decode a JWT token using Supabase.
+    This ensures the token is valid for the current Supabase project.
+    """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
-    except JWTError:
+        from app.core.supabase import get_supabase_client
+        supabase = get_supabase_client()
+        
+        # This will call Supabase Auth to verify the token and return user info
+        response = supabase.auth.get_user(token)
+        
+        # If the token is invalid, Supabase will raise an error or return no user
+        if not response or not response.user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired session token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        # Return a payload compatible with existing logic (using 'sub' for user ID)
+        return {
+            "sub": str(response.user.id),
+            "email": response.user.email,
+            "role": response.user.role,
+        }
+    except Exception as e:
+        logger.exception("Token verification failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from e
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """Get the current authenticated user from token."""
-    payload = verify_token(token)
-    user_id: str = payload.get("sub")
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-        )
-    return payload
+    return verify_token(token)

@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
@@ -5,10 +6,13 @@ import * as Crypto from 'expo-crypto';
 const PIN_KEY = 'app_pin';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 const APP_LOCKED_KEY = 'app_locked';
+const LOCK_TIMEOUT_KEY = 'app_lock_timeout';
 
-// Simple implementation of a salted hash since direct PBKDF2 isn't available in standard Expo Crypto without polyfills
+// Default lock timeout (30 seconds)
+const DEFAULT_LOCK_TIMEOUT = 30000;
+
 async function hashPIN(pin: string, salt: string): Promise<string> {
-    const iterations = 5000; // Slow down the hash
+    const iterations = 5000;
     let hash = pin + salt;
     for (let i = 0; i < iterations; i++) {
         hash = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, hash);
@@ -16,17 +20,7 @@ async function hashPIN(pin: string, salt: string): Promise<string> {
     return hash;
 }
 
-export interface BiometricType {
-    available: boolean;
-    type: LocalAuthentication.AuthenticationType[];
-}
-// ... checkBiometricAvailability ...
-// (I will skip unchanged parts by using chunks if possible, but replace_file_content is single block usually unless multi is used. I'll use multi_replace to be precise and safe).
-
-// wait, I can't restart the thought mid-tool-argument generation.
-// I'll switch to multi_replace_file_content.
-
-const PIN_SALT = 'attenon-mobile-secure-salt-v1'; // Ideally this should be per-user or env var, but constant salt prevents rainbow tables somewhat if not known to attacker, though per-user is best. Given constraints, using a fixed app salt.
+const PIN_SALT = 'attenon-mobile-secure-salt-v1';
 
 export interface BiometricType {
     available: boolean;
@@ -34,6 +28,9 @@ export interface BiometricType {
 }
 
 export async function checkBiometricAvailability(): Promise<BiometricType> {
+    if (Platform.OS === 'web') {
+        return { available: false, type: [] };
+    }
     try {
         const compatible = await LocalAuthentication.hasHardwareAsync();
         if (!compatible) {
@@ -52,6 +49,9 @@ export async function checkBiometricAvailability(): Promise<BiometricType> {
 }
 
 export async function authenticateWithBiometric(): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         const compatible = await LocalAuthentication.hasHardwareAsync();
         if (!compatible) {
@@ -88,6 +88,9 @@ export async function authenticateWithBiometric(): Promise<boolean> {
 }
 
 export async function savePIN(pin: string): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         const hashed = await hashPIN(pin, PIN_SALT);
         await SecureStore.setItemAsync(PIN_KEY, hashed);
@@ -99,9 +102,11 @@ export async function savePIN(pin: string): Promise<boolean> {
 }
 
 export async function getPIN(): Promise<string | null> {
+    if (Platform.OS === 'web') {
+        return null;
+    }
     try {
-        const pin = await SecureStore.getItemAsync(PIN_KEY);
-        return pin;
+        return await SecureStore.getItemAsync(PIN_KEY);
     } catch (error) {
         console.error('Error getting PIN:', error);
         return null;
@@ -132,6 +137,9 @@ export async function hasPIN(): Promise<boolean> {
 }
 
 export async function deletePIN(): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         await SecureStore.deleteItemAsync(PIN_KEY);
         await setBiometricEnabled(false);
@@ -143,6 +151,9 @@ export async function deletePIN(): Promise<boolean> {
 }
 
 export async function setBiometricEnabled(enabled: boolean): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, enabled ? 'true' : 'false');
         return true;
@@ -153,6 +164,9 @@ export async function setBiometricEnabled(enabled: boolean): Promise<boolean> {
 }
 
 export async function isBiometricEnabled(): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         const value = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
         return value === 'true';
@@ -163,6 +177,9 @@ export async function isBiometricEnabled(): Promise<boolean> {
 }
 
 export async function setAppLocked(locked: boolean): Promise<void> {
+    if (Platform.OS === 'web') {
+        return;
+    }
     try {
         await SecureStore.setItemAsync(APP_LOCKED_KEY, locked ? 'true' : 'false');
     } catch (error) {
@@ -171,6 +188,9 @@ export async function setAppLocked(locked: boolean): Promise<void> {
 }
 
 export async function isAppLocked(): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
     try {
         const value = await SecureStore.getItemAsync(APP_LOCKED_KEY);
         return value === 'true';
@@ -197,6 +217,38 @@ export async function shouldShowLockScreen(): Promise<boolean> {
 
 export async function unlockApp(): Promise<void> {
     await setAppLocked(false);
+}
+
+export async function getLockTimeout(): Promise<number> {
+    if (Platform.OS === 'web') {
+        return DEFAULT_LOCK_TIMEOUT;
+    }
+    try {
+        const value = await SecureStore.getItemAsync(LOCK_TIMEOUT_KEY);
+        if (value !== null && value !== undefined) {
+            const timeout = parseInt(value, 10);
+            if (!isNaN(timeout) && timeout >= 0) {
+                return timeout;
+            }
+        }
+        return DEFAULT_LOCK_TIMEOUT;
+    } catch (error) {
+        console.error('Error getting lock timeout:', error);
+        return DEFAULT_LOCK_TIMEOUT;
+    }
+}
+
+export async function setLockTimeout(timeoutMs: number): Promise<boolean> {
+    if (Platform.OS === 'web') {
+        return false;
+    }
+    try {
+        await SecureStore.setItemAsync(LOCK_TIMEOUT_KEY, timeoutMs.toString());
+        return true;
+    } catch (error) {
+        console.error('Error setting lock timeout:', error);
+        return false;
+    }
 }
 
 export function validatePIN(pin: string): { valid: boolean; error?: string } {

@@ -30,9 +30,10 @@ import { AttendanceHistoryScreen } from './src/screens/AttendanceHistoryScreen';
 import { MyScheduleScreen } from './src/screens/MyScheduleScreen';
 import { PINSetupScreen } from './src/screens/PINSetupScreen';
 import { AppUnlockScreen } from './src/screens/AppUnlockScreen';
+import { FaceAttendanceScreen } from './src/screens/FaceAttendanceScreen';
 import { initializeSession, onSessionChange, getCurrentUser } from './src/services/session';
 import { shouldShowLockScreen, setAppLocked, hasPIN } from './src/services/security';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -52,9 +53,27 @@ export default function App() {
   const [studentVerifyEmail, setStudentVerifyEmail] = useState('');
   const [showUnlockScreen, setShowUnlockScreen] = useState(false);
 
+  const [selectedClassForAttendance, setSelectedClassForAttendance] = useState(null);
+
+  // Refs to track current screen and navigation state without triggering re-renders
+  const currentScreenRef = useRef(currentScreen);
+  const isNavigatingRef = useRef(false);
+  const lockScreenTimeoutRef = useRef(null);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    currentScreenRef.current = currentScreen;
+  }, [currentScreen]);
+
   const navigateToScreen = (screen) => {
+    // Set navigating flag to prevent lock screen during transitions
+    isNavigatingRef.current = true;
     setPreviousScreen(currentScreen);
     setCurrentScreen(screen);
+    // Clear navigating flag after animation completes
+    setTimeout(() => {
+      isNavigatingRef.current = false;
+    }, 350); // Slightly longer than animation duration (300ms)
   };
 
   const getNavigationDirection = (from, to) => {
@@ -69,6 +88,7 @@ export default function App() {
       'student': ['student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-setup'],
       'student-settings': ['pin-setup'],
       'instructor': ['notifications'],
+      'face-attendance': ['my-schedule'],
     };
 
     const forwardScreens = {
@@ -86,6 +106,7 @@ export default function App() {
       'pin-setup': ['student-settings'],
       'notifications': ['instructor'],
       'student-verify-email': ['login'],
+      'my-schedule': ['face-attendance'],
     };
 
     if (backScreens[from]?.includes(to)) {
@@ -98,92 +119,118 @@ export default function App() {
     return 'forward';
   };
 
-  // Initialize session on app startup
-  useEffect(() => {
-    async function checkSession() {
-      try {
-        const sessionState = await initializeSession();
 
-        if (sessionState.isAuthenticated && sessionState.user) {
-          // Check if PIN is set - if so, lock the app and show unlock screen
-          const pinExists = await hasPIN();
-          if (pinExists) {
-            await setAppLocked(true);
-            setShowUnlockScreen(true);
-            setCurrentScreen('app-unlock');
+
+  // Initialize session and set up auth listener
+  useEffect(() => {
+    if (!fontsLoaded) return;
+
+    let mounted = true;
+
+    async function checkInitialSession() {
+      try {
+        const state = await initializeSession();
+        if (!mounted) return;
+
+        if (state.isAuthenticated && state.user) {
+          setUserRole(state.user.role);
+
+          if (Platform.OS === 'web') {
+            navigateToScreen(state.user.role === 'instructor' ? 'instructor' : 'student');
           } else {
-            // No PIN set, navigate to appropriate dashboard
-            setUserRole(sessionState.user.role);
-            navigateToScreen(sessionState.user.role === 'instructor' ? 'instructor' : 'student');
+            const hasPin = await hasPIN();
+            if (hasPin) {
+              await setAppLocked(true);
+              setShowUnlockScreen(true);
+              setCurrentScreen('app-unlock');
+            } else {
+              navigateToScreen(state.user.role === 'instructor' ? 'instructor' : 'student');
+            }
           }
         } else {
-          // No active session, show login screen
           navigateToScreen('login');
         }
       } catch (error) {
-        console.error('Error checking session:', error);
-        setCurrentScreen('login');
+        console.error('Check session error:', error);
+        navigateToScreen('login');
       } finally {
-        setSessionLoading(false);
+        if (mounted) setSessionLoading(false);
       }
     }
 
-    // Wait for fonts to load before checking session
-    if (fontsLoaded) {
-      checkSession();
-    }
+    checkInitialSession();
+
+    // Set up real-time auth listener
+    const { data: { subscription } } = onSessionChange(async (isAuthenticated, user) => {
+      if (!mounted) return;
+
+      if (!isAuthenticated) {
+        navigateToScreen('login');
+        setUserRole('student');
+      } else if (user && currentScreen === 'login') {
+        // Only auto-navigate from login screen to dashboard if listener picks up a new session
+        setUserRole(user.role);
+        navigateToScreen(user.role === 'instructor' ? 'instructor' : 'student');
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
   }, [fontsLoaded]);
 
-  // Handle app state changes (background/foreground)
+  // Handle app state changes (background/foreground) - skip on web
+  // Uses refs instead of state to avoid re-subscribing on every navigation
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      // Clear any pending lock screen timeout
+      if (lockScreenTimeoutRef.current) {
+        clearTimeout(lockScreenTimeoutRef.current);
+        lockScreenTimeoutRef.current = null;
+      }
+
       const pinExists = await hasPIN();
       if (!pinExists) return;
 
+      const screen = currentScreenRef.current;
+      const isSystemScreen = screen === 'login' || screen === 'splash' || screen === 'app-unlock';
+
       if (nextAppState === 'background' || nextAppState === 'inactive') {
-        // App going to background - always lock the app if PIN is set
-        if (currentScreen !== 'login' && currentScreen !== 'splash' && currentScreen !== 'app-unlock') {
+        if (!isSystemScreen) {
           await setAppLocked(true);
         }
       } else if (nextAppState === 'active') {
-        // App coming to foreground - always check and show unlock screen if locked
-        const isLocked = await shouldShowLockScreen();
-        if (isLocked) {
-          if (currentScreen !== 'login' && currentScreen !== 'splash' && currentScreen !== 'app-unlock') {
+        // Add delay before showing lock screen to prevent flashes during navigation
+        // This gives time for navigation animations to complete
+        lockScreenTimeoutRef.current = setTimeout(async () => {
+          // Re-check conditions after delay
+          const updatedScreen = currentScreenRef.current;
+          const updatedIsSystem = updatedScreen === 'login' || updatedScreen === 'splash' || updatedScreen === 'app-unlock';
+
+          // Don't show lock screen if navigating or already on system screen
+          if (isNavigatingRef.current || updatedIsSystem) {
+            return;
+          }
+
+          const isLocked = await shouldShowLockScreen();
+          if (isLocked) {
             setShowUnlockScreen(true);
             setCurrentScreen('app-unlock');
           }
-        }
+        }, 500); // 500ms delay to allow navigation to complete
       }
     });
 
     return () => {
       subscription.remove();
-    };
-  }, [currentScreen]);
-
-  // Listen for auth state changes (login/logout)
-  useEffect(() => {
-    if (!fontsLoaded || sessionLoading) {
-      return;
-    }
-
-    const { data: subscription } = onSessionChange((isAuthenticated, user) => {
-      if (isAuthenticated && user) {
-        // User logged in, navigate to appropriate dashboard
-        setUserRole(user.role);
-        navigateToScreen(user.role === 'instructor' ? 'instructor' : 'student');
-      } else {
-        // User logged out, go to login screen
-        navigateToScreen('login');
-        setUserRole('student');
+      if (lockScreenTimeoutRef.current) {
+        clearTimeout(lockScreenTimeoutRef.current);
       }
-    });
-
-    return () => {
-      subscription?.subscription?.unsubscribe();
     };
-  }, [fontsLoaded, sessionLoading]);
+  }, []); // Empty dependency array - only subscribe once
 
   // Handle Android back button - must be before early return to maintain hook order
   useEffect(() => {
@@ -209,6 +256,7 @@ export default function App() {
         'instructor-forgot-password': 'login',
         'instructor-verify-code': 'instructor-forgot-password',
         'instructor-reset-password': 'instructor-verify-code',
+        'face-attendance': 'my-schedule',
       };
 
       const backScreen = backNavigationMap[currentScreen];
@@ -401,6 +449,21 @@ export default function App() {
     setStudentVerifyEmail('');
   };
 
+  const handleNavigateToFaceAttendance = (classData) => {
+    setSelectedClassForAttendance(classData);
+    navigateToScreen('face-attendance');
+  };
+
+  const handleFaceAttendanceBack = () => {
+    navigateToScreen('my-schedule');
+    setSelectedClassForAttendance(null);
+  };
+
+  const handleFaceAttendanceComplete = () => {
+    navigateToScreen('my-schedule');
+    setSelectedClassForAttendance(null);
+  };
+
   const renderScreen = (screen) => {
     const direction = getNavigationDirection(previousScreen, screen);
 
@@ -507,9 +570,11 @@ export default function App() {
         return (
           <AnimatedScreen key="student-settings" isActive={currentScreen === 'student-settings'} direction={direction}>
             <StudentSettingsScreen
+              isActive={currentScreen === 'student-settings'}
               onBack={handleBackFromStudentSettings}
               onLogout={handleLogout}
               onNavigateToPINSetup={handleNavigateToPINSetup}
+              onNavigateToFaceSetup={handleNavigateToFaceSetup}
             />
           </AnimatedScreen>
         );
@@ -534,6 +599,17 @@ export default function App() {
           <AnimatedScreen key="my-schedule" isActive={currentScreen === 'my-schedule'} direction={direction}>
             <MyScheduleScreen
               onBack={handleBackFromSchedule}
+              onNavigateToFaceAttendance={handleNavigateToFaceAttendance}
+            />
+          </AnimatedScreen>
+        );
+      case 'face-attendance':
+        return (
+          <AnimatedScreen key="face-attendance" isActive={currentScreen === 'face-attendance'} direction={direction}>
+            <FaceAttendanceScreen
+              classData={selectedClassForAttendance}
+              onBack={handleFaceAttendanceBack}
+              onComplete={handleFaceAttendanceComplete}
             />
           </AnimatedScreen>
         );
@@ -563,10 +639,11 @@ export default function App() {
         );
       case 'app-unlock':
         return (
-          <AppUnlockScreen
-            key="app-unlock"
-            onUnlock={handleAppUnlock}
-          />
+          <AnimatedScreen key="app-unlock" isActive={currentScreen === 'app-unlock'} direction="forward">
+            <AppUnlockScreen
+              onUnlock={handleAppUnlock}
+            />
+          </AnimatedScreen>
         );
       default:
         return (
@@ -577,10 +654,10 @@ export default function App() {
     }
   };
 
-  const allScreens = ['splash', 'login', 'forgot-password', 'student-verify-code', 'student-reset-password', 'student-verify-email', 'instructor-forgot-password', 'instructor-verify-code', 'instructor-reset-password', 'instructor', 'student', 'student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'notifications', 'face-setup', 'pin-setup', 'app-unlock'];
+  const allScreens = ['splash', 'login', 'forgot-password', 'student-verify-code', 'student-reset-password', 'student-verify-email', 'instructor-forgot-password', 'instructor-verify-code', 'instructor-reset-password', 'instructor', 'student', 'student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-attendance', 'notifications', 'face-setup', 'pin-setup', 'app-unlock'];
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider initialSafeAreaInsets={{ top: 0, bottom: 0, left: 0, right: 0 }}>
       <React.Fragment>
         {showUnlockScreen && currentScreen === 'app-unlock' ? (
           renderScreen('app-unlock')

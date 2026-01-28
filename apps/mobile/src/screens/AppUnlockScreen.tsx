@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Keyboard, AppState, AppStateStatus, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,20 +23,45 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
     const [biometricType, setBiometricType] = useState<string>('');
     const [userName, setUserName] = useState<string>('');
     const [isAuthenticating, setIsAuthenticating] = useState(false);
-    const pinInputRef = useRef<TextInput>(null);
+    const [isLoadingName, setIsLoadingName] = useState(true);
 
+    const pinInputRef = useRef<TextInput>(null);
     const appState = useRef(AppState.currentState);
+
+    // Use refs to track current values for AppState listener to avoid stale closures
+    const biometricEnabledRef = useRef(biometricEnabled);
+    const biometricAvailableRef = useRef(biometricAvailable);
+    const isAuthenticatingRef = useRef(isAuthenticating);
+
+    // Keep refs in sync with state
+    useEffect(() => {
+        biometricEnabledRef.current = biometricEnabled;
+    }, [biometricEnabled]);
+
+    useEffect(() => {
+        biometricAvailableRef.current = biometricAvailable;
+    }, [biometricAvailable]);
+
+    useEffect(() => {
+        isAuthenticatingRef.current = isAuthenticating;
+    }, [isAuthenticating]);
 
     useEffect(() => {
         checkBiometrics();
         loadUserName();
         const subscription = AppState.addEventListener('change', handleAppStateChange);
+        // Ensure keyboard pops up on mount (if no biometric auto-prompt or after delay)
+        const timer = setTimeout(() => {
+            pinInputRef.current?.focus();
+        }, 600);
         return () => {
             subscription.remove();
+            clearTimeout(timer);
         };
     }, []);
 
     const loadUserName = async () => {
+        setIsLoadingName(true);
         try {
             const user = await getCurrentProfile();
             if (user && user.full_name) {
@@ -46,6 +71,8 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
         } catch (error) {
             console.error('Error loading user name:', error);
             setUserName('');
+        } finally {
+            setIsLoadingName(false);
         }
     };
 
@@ -69,20 +96,20 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
         }
     };
 
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+    const handleAppStateChange = useCallback((nextAppState: AppStateStatus) => {
         if (
             appState.current.match(/inactive|background/) &&
             nextAppState === 'active' &&
-            biometricEnabled &&
-            biometricAvailable &&
-            !isAuthenticating
+            biometricEnabledRef.current &&
+            biometricAvailableRef.current &&
+            !isAuthenticatingRef.current
         ) {
             setTimeout(() => {
                 handleBiometricAuth(true);
             }, 500);
         }
         appState.current = nextAppState;
-    };
+    }, []);
 
     const handleBiometricAuth = async (autoTrigger = false) => {
         if (isAuthenticating) {
@@ -133,18 +160,28 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
         }
     };
 
+    const handleFocusPin = () => {
+        // Ensure keyboard appears
+        if (pinInputRef.current) {
+            pinInputRef.current.blur();
+            setTimeout(() => {
+                pinInputRef.current?.focus();
+            }, 100);
+        }
+    };
+
     const renderPinDots = () => {
         if (showPin) {
             return (
-                <View style={styles.pinTextContainer}>
+                <TouchableOpacity onPress={handleFocusPin} activeOpacity={1} style={styles.pinTextContainer}>
                     <Text style={[styles.pinText, { color: colors.text.primary }]}>
                         {pin.padEnd(6, '•')}
                     </Text>
-                </View>
+                </TouchableOpacity>
             );
         }
         return (
-            <View style={styles.pinDotsContainer}>
+            <TouchableOpacity onPress={handleFocusPin} activeOpacity={1} style={styles.pinDotsContainer}>
                 {[0, 1, 2, 3, 4, 5].map((index) => (
                     <View
                         key={index}
@@ -158,7 +195,7 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
                         ]}
                     />
                 ))}
-            </View>
+            </TouchableOpacity>
         );
     };
 
@@ -179,9 +216,19 @@ export const AppUnlockScreen = ({ onUnlock }: AppUnlockScreenProps) => {
                         <Text style={[styles.greeting, { color: colors.white }]}>
                             {getGreeting()}
                         </Text>
-                        <Text style={[styles.name, { color: colors.white }]} numberOfLines={1}>
-                            {userName || 'User'}
-                        </Text>
+                        {isLoadingName ? (
+                            <View style={{
+                                width: 150,
+                                height: 32,
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                borderRadius: 8,
+                                marginTop: 4
+                            }} />
+                        ) : (
+                            <Text style={[styles.name, { color: colors.white }]} numberOfLines={1}>
+                                {userName || 'User'}
+                            </Text>
+                        )}
                     </View>
                     <View style={styles.headerRight} />
                 </View>

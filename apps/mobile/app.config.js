@@ -9,10 +9,8 @@ module.exports = {
         slug: 'mobile',
         version: '1.0.0',
         orientation: 'portrait',
-        main: 'index.js',
-        icon: './assets/attenon logo.png',
+        icon: './assets/splash.png',
         userInterfaceStyle: 'automatic',
-        newArchEnabled: true,
         splash: {
             image: './assets/splash.png',
             resizeMode: 'contain',
@@ -24,8 +22,9 @@ module.exports = {
         },
         android: {
             package: 'com.attenon.mobile',
+            minSdkVersion: 26,
             adaptiveIcon: {
-                foregroundImage: './assets/attenon logo.png',
+                foregroundImage: './assets/splash.png',
                 backgroundColor: '#ffffff',
             },
             edgeToEdgeEnabled: true,
@@ -33,6 +32,17 @@ module.exports = {
         web: {
             favicon: './assets/attenon logo.png',
         },
+        plugins: [
+            [
+                'react-native-vision-camera',
+                {
+                    cameraPermissionText: '$(PRODUCT_NAME) needs access to your Camera.',
+                    enableMicrophonePermission: false,
+                },
+            ],
+            'expo-font',
+            'expo-secure-store',
+        ],
         extra: {
             eas: {
                 projectId: '2c901cc4-c0e9-4ffd-96ef-cd6dd8d15b62',

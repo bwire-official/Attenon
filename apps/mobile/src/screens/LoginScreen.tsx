@@ -252,10 +252,8 @@ export const LoginScreen = ({ onLogin, onNavigateToForgotPassword, onNavigateToI
                 <View style={styles.header}>
                     <Image
                         source={require('../../assets/attenon logo.png')}
-                        style={[
-                            styles.logo,
-                            { tintColor: isDark ? colorPalette.grey[100] : colors.text.primary }
-                        ]}
+                        style={styles.logo}
+                        tintColor={isDark ? colorPalette.grey[100] : colors.text.primary}
                         resizeMode="contain"
                     />
                 </View>

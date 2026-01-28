@@ -29,8 +29,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # CORS
-    ALLOWED_ORIGINS_STR: str = "http://localhost:3000,http://localhost:19006"
+    # CORS - Environment-aware origin settings
+    # In production, default to safe origin; in dev, allow all if not explicitly set
+    ALLOWED_ORIGINS_STR: str = ""
     
     # Face Recognition
     FACE_MATCH_THRESHOLD: float = 0.6
@@ -38,8 +39,17 @@ class Settings(BaseSettings):
     
     @property
     def ALLOWED_ORIGINS(self) -> List[str]:
-        """Get list of allowed CORS origins."""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS_STR.split(',')]
+        """Get list of allowed CORS origins (environment-aware)."""
+        # If explicitly set via env var, use that value
+        if self.ALLOWED_ORIGINS_STR.strip():
+            if self.ALLOWED_ORIGINS_STR.strip() == "*":
+                return ["*"]
+            return [origin.strip() for origin in self.ALLOWED_ORIGINS_STR.split(',')]
+        # Default based on environment
+        if self.ENVIRONMENT == "production":
+            return ["http://localhost:3000"]
+        # Non-production: allow all origins for mobile development
+        return ["*"]
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -49,7 +59,6 @@ class Settings(BaseSettings):
     )
 
 
-@lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings instance."""
+    """Get settings instance."""
     return Settings()

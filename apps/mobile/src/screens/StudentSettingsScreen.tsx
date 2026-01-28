@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentProfile, logout } from '../services/auth';
-import { hasPIN, isBiometricEnabled, setBiometricEnabled as saveBiometricEnabled, checkBiometricAvailability, deletePIN, canEnableBiometrics, authenticateWithBiometric } from '../services/security';
+import { hasPIN, isBiometricEnabled, setBiometricEnabled as saveBiometricEnabled, checkBiometricAvailability, deletePIN, canEnableBiometrics, authenticateWithBiometric, getLockTimeout, setLockTimeout } from '../services/security';
 import type { Profile } from '../lib/supabase';
+import { CustomAlert } from '../components/CustomAlert';
 
 interface StudentSettingsScreenProps {
     onBack?: () => void;
     onLogout?: () => void;
     onNavigateToPINSetup?: () => void;
+    onNavigateToFaceSetup?: () => void;
+    isActive?: boolean;
 }
 
 interface SettingItem {
@@ -28,7 +31,7 @@ interface SettingItem {
     danger?: boolean;
 }
 
-export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }: StudentSettingsScreenProps) => {
+export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup, onNavigateToFaceSetup, isActive }: StudentSettingsScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const [profile, setProfile] = useState<Profile | null>(null);
@@ -38,11 +41,42 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
     const [biometricEnabled, setBiometricEnabled] = useState(false);
     const [hasPinSet, setHasPinSet] = useState(false);
     const [biometricAvailable, setBiometricAvailable] = useState(false);
+    const [lockTimeout, setLockTimeoutState] = useState(30000);
+
+    // Custom Alert State
+    const [alertConfig, setAlertConfig] = useState<{
+        visible: boolean;
+        title: string;
+        message: string;
+        icon?: string;
+        iconColor?: string;
+        actions: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }>;
+    }>({
+        visible: false,
+        title: '',
+        message: '',
+        actions: [],
+    });
+
+    const showAlert = (title: string, message: string, actions: any[], icon?: string, iconColor?: string) => {
+        setAlertConfig({
+            visible: true,
+            title,
+            message,
+            actions,
+            icon,
+            iconColor,
+        });
+    };
 
     useEffect(() => {
-        loadProfile();
-        loadSecuritySettings();
-    }, []);
+        // Load on mount or when screen becomes active
+        // isActive can be undefined initially, so we check for explicit true or undefined (for backward compatibility)
+        if (isActive !== false) {
+            loadProfile();
+            loadSecuritySettings();
+        }
+    }, [isActive]);
 
     const loadProfile = async () => {
         try {
@@ -60,82 +94,26 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
             const pinExists = await hasPIN();
             const biometric = await isBiometricEnabled();
             const available = await checkBiometricAvailability();
+            const timeout = await getLockTimeout();
 
             setHasPinSet(pinExists);
             setBiometricEnabled(biometric);
-            setBiometricAvailable(available.available);
+            setBiometricAvailable(available?.available ?? false);
+            setLockTimeoutState(timeout ?? 30000);
         } catch (error) {
             console.error('Error loading security settings:', error);
+            // Set defaults on error
+            setHasPinSet(false);
+            setBiometricEnabled(false);
+            setBiometricAvailable(false);
+            setLockTimeoutState(30000);
         }
     };
 
-    const handleSetupPIN = () => {
-        if (hasPinSet) {
-            Alert.alert(
-                'PIN Already Set',
-                'You already have a PIN set. Would you like to change it?',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                        text: 'Change PIN',
-                        onPress: () => {
-                            onNavigateToPINSetup?.();
-                        },
-                    },
-                ]
-            );
-        } else {
-            onNavigateToPINSetup?.();
-        }
-    };
-
-    const handleBiometricToggle = async (value: boolean) => {
-        if (value) {
-            const canEnable = await canEnableBiometrics();
-            if (!canEnable.canEnable) {
-                Alert.alert(
-                    canEnable.error?.includes('PIN') ? 'PIN Required' : 'Not Available',
-                    canEnable.error || 'Cannot enable biometrics.',
-                    canEnable.error?.includes('PIN') ? [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                            text: 'Setup PIN',
-                            onPress: () => {
-                                onNavigateToPINSetup?.();
-                            },
-                        },
-                    ] : [{ text: 'OK' }]
-                );
-                return;
-            }
-
-            const biometricSuccess = await authenticateWithBiometric();
-            if (!biometricSuccess) {
-                Alert.alert('Error', 'Biometric authentication failed. Please try again.');
-                return;
-            }
-
-            const success = await saveBiometricEnabled(true);
-            if (success) {
-                setBiometricEnabled(true);
-                Alert.alert('Success', 'Biometric authentication enabled successfully.');
-            } else {
-                Alert.alert('Error', 'Failed to save biometric settings.');
-            }
-        } else {
-            const success = await saveBiometricEnabled(false);
-            if (success) {
-                setBiometricEnabled(false);
-            } else {
-                Alert.alert('Error', 'Failed to update biometric settings.');
-            }
-        }
-    };
-
-    const handleRemovePIN = () => {
-        Alert.alert(
+    const handleRemovePIN = async () => {
+        showAlert(
             'Remove PIN',
-            'Are you sure you want to remove your PIN? This will also disable biometrics.',
+            'Are you sure you want to remove your PIN? This will disable the app lock security.',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -146,18 +124,117 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
                         if (success) {
                             setHasPinSet(false);
                             setBiometricEnabled(false);
-                            Alert.alert('Success', 'PIN has been removed.');
+                            showAlert('Success', 'PIN removed successfully.', [{ text: 'OK' }], 'checkmark-circle-outline', colorPalette.yellowGreen[500]);
                         } else {
-                            Alert.alert('Error', 'Failed to remove PIN.');
+                            showAlert('Error', 'Failed to remove PIN.', [{ text: 'OK' }], 'alert-circle-outline', '#EF4444');
                         }
                     },
                 },
-            ]
+            ],
+            'keypad-outline',
+            '#EF4444'
+        );
+    };
+
+    const handleSetupPIN = () => {
+        if (hasPinSet) {
+            showAlert(
+                'PIN Security',
+                'What would you like to do with your PIN?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Remove PIN',
+                        style: 'destructive',
+                        onPress: handleRemovePIN,
+                    },
+                    {
+                        text: 'Change PIN',
+                        onPress: () => {
+                            onNavigateToPINSetup?.();
+                        },
+                    },
+                ],
+                'keypad-outline'
+            );
+        } else {
+            onNavigateToPINSetup?.();
+        }
+    };
+
+    const handleBiometricToggle = async (value: boolean) => {
+        if (value) {
+            const canEnable = await canEnableBiometrics();
+            if (!canEnable.canEnable) {
+                const isPinMissing = canEnable.error?.includes('PIN');
+                showAlert(
+                    isPinMissing ? 'PIN Required' : 'Not Available',
+                    canEnable.error || 'Cannot enable biometrics.',
+                    isPinMissing ? [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Setup PIN',
+                            onPress: () => {
+                                onNavigateToPINSetup?.();
+                            },
+                        },
+                    ] : [{ text: 'OK' }],
+                    isPinMissing ? 'lock-closed-outline' : 'alert-circle-outline',
+                    isPinMissing ? colors.primary : '#EF4444'
+                );
+                return;
+            }
+
+            const biometricSuccess = await authenticateWithBiometric();
+            if (!biometricSuccess) {
+                showAlert('Auth Failed', 'Biometric authentication failed. Please try again.', [{ text: 'OK' }], 'finger-print-outline', '#EF4444');
+                return;
+            }
+
+            const success = await saveBiometricEnabled(true);
+            if (success) {
+                setBiometricEnabled(true);
+                showAlert('Success', 'Biometric authentication enabled successfully.', [{ text: 'OK' }], 'checkmark-circle-outline', colorPalette.yellowGreen[500]);
+            } else {
+                showAlert('Error', 'Failed to save biometric settings.', [{ text: 'OK' }], 'alert-circle-outline', '#EF4444');
+            }
+        } else {
+            const success = await saveBiometricEnabled(false);
+            if (success) {
+                setBiometricEnabled(false);
+            } else {
+                showAlert('Error', 'Failed to update biometric settings.', [{ text: 'OK' }], 'alert-circle-outline', '#EF4444');
+            }
+        }
+    };
+
+    const handleTimeoutPress = () => {
+        const options = [
+            { label: 'Immediate', value: 0 },
+            { label: '30 Seconds', value: 30000 },
+            { label: '1 Minute', value: 60000 },
+            { label: '5 Minutes', value: 300000 },
+            { label: '10 Minutes', value: 600000 },
+        ];
+
+        showAlert(
+            'App Lock Timeout',
+            'Select how long the app stays unlocked after leaving it:',
+            options.map(opt => ({
+                text: opt.label,
+                onPress: async () => {
+                    const success = await setLockTimeout(opt.value);
+                    if (success) {
+                        setLockTimeoutState(opt.value);
+                    }
+                }
+            })),
+            'timer-outline'
         );
     };
 
     const handleLogout = () => {
-        Alert.alert(
+        showAlert(
             'Logout',
             'Are you sure you want to logout?',
             [
@@ -173,39 +250,66 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
                         if (result.success) {
                             onLogout?.();
                         } else {
-                            Alert.alert('Error', result.error || 'Failed to logout');
+                            showAlert('Error', result.error || 'Failed to logout', [{ text: 'OK' }], 'alert-circle-outline', '#EF4444');
                         }
                     },
                 },
-            ]
+            ],
+            'log-out-outline',
+            '#EF4444'
         );
     };
 
     const handleFaceRegistration = () => {
-        Alert.alert('Face Registration', 'This feature will be available soon.');
+        if (profile?.is_face_registered) {
+            showAlert(
+                'Face Already Registered',
+                'Your face is already registered. Would you like to update your face data?',
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Update Face',
+                        onPress: () => {
+                            onNavigateToFaceSetup?.();
+                        },
+                    },
+                ],
+                'scan-outline',
+                colors.primary
+            );
+        } else {
+            onNavigateToFaceSetup?.();
+        }
     };
 
     const handleChangePassword = () => {
-        Alert.alert('Change Password', 'This feature will be available soon.');
+        showAlert('Coming Soon', 'This feature will be available in the next update.', [{ text: 'Got it' }], 'lock-closed-outline');
     };
 
     const handlePrivacyPolicy = () => {
-        Alert.alert('Privacy Policy', 'This feature will be available soon.');
+        showAlert('Coming Soon', 'This feature will be available in the next update.', [{ text: 'Got it' }], 'shield-checkmark-outline');
     };
 
     const handleTermsOfService = () => {
-        Alert.alert('Terms of Service', 'This feature will be available soon.');
+        showAlert('Coming Soon', 'This feature will be available in the next update.', [{ text: 'Got it' }], 'document-text-outline');
     };
 
     const handleAbout = () => {
-        Alert.alert(
+        showAlert(
             'About Attenon',
-            'Version 1.0.0\n\nA biometric school attendance system using Face Verification.\n\n© 2026 Attenon. All rights reserved.'
+            'Version 1.0.0\n\nA biometric school attendance system using Face Verification.\n\n© 2026 Attenon. All rights reserved.',
+            [{ text: 'Close' }],
+            'information-circle-outline'
         );
     };
 
     const handleContactSupport = () => {
-        Alert.alert('Contact Support', 'Email: support@attenon.com\nPhone: +234 XXX XXX XXXX');
+        showAlert(
+            'Contact Support',
+            'Email: support@attenon.com\nPhone: +234 XXX XXX XXXX',
+            [{ text: 'Close' }],
+            'help-circle-outline'
+        );
     };
 
     const accountSettings: SettingItem[] = [
@@ -269,6 +373,15 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
             type: 'toggle',
             value: biometricEnabled,
             onToggle: handleBiometricToggle,
+        },
+        {
+            id: 'lock-timeout',
+            icon: 'timer-outline',
+            title: 'Lock Timeout',
+            subtitle: lockTimeout === 0 ? 'Immediate' : `${lockTimeout / 60000 >= 1 ? `${lockTimeout / 60000}m` : `${lockTimeout / 1000}s`}`,
+            type: 'navigation',
+            onPress: handleTimeoutPress,
+            showChevron: true,
         },
     ];
 
@@ -513,6 +626,17 @@ export const StudentSettingsScreen = ({ onBack, onLogout, onNavigateToPINSetup }
                     </TouchableOpacity>
                 </ScrollView>
             </View>
+
+            {/* Custom Alert */}
+            <CustomAlert
+                visible={alertConfig.visible}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                actions={alertConfig.actions}
+                icon={alertConfig.icon}
+                iconColor={alertConfig.iconColor}
+                onClose={() => setAlertConfig({ ...alertConfig, visible: false })}
+            />
         </View>
     );
 };

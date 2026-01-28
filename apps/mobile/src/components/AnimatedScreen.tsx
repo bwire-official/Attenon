@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Dimensions } from 'react-native';
+import { Animated, StyleSheet, Dimensions, Platform } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -12,22 +12,23 @@ interface AnimatedScreenProps {
 export const AnimatedScreen = ({ children, isActive, direction = 'forward' }: AnimatedScreenProps) => {
     const slideAnim = useRef(new Animated.Value(isActive ? 0 : (direction === 'forward' ? SCREEN_WIDTH : -SCREEN_WIDTH))).current;
     const opacityAnim = useRef(new Animated.Value(isActive ? 1 : 0)).current;
+    const useNativeDriver = Platform.OS !== 'web';
 
     useEffect(() => {
         if (isActive) {
             slideAnim.setValue(direction === 'forward' ? SCREEN_WIDTH : -SCREEN_WIDTH);
             opacityAnim.setValue(0);
-            
+
             Animated.parallel([
                 Animated.timing(slideAnim, {
                     toValue: 0,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver,
                 }),
                 Animated.timing(opacityAnim, {
                     toValue: 1,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver,
                 }),
             ]).start();
         } else {
@@ -35,16 +36,16 @@ export const AnimatedScreen = ({ children, isActive, direction = 'forward' }: An
                 Animated.timing(slideAnim, {
                     toValue: direction === 'forward' ? -SCREEN_WIDTH : SCREEN_WIDTH,
                     duration: 250,
-                    useNativeDriver: true,
+                    useNativeDriver,
                 }),
                 Animated.timing(opacityAnim, {
                     toValue: 0,
                     duration: 250,
-                    useNativeDriver: true,
+                    useNativeDriver,
                 }),
             ]).start();
         }
-    }, [isActive, direction, slideAnim, opacityAnim]);
+    }, [isActive, direction, slideAnim, opacityAnim, useNativeDriver]);
 
     return (
         <Animated.View
@@ -54,9 +55,10 @@ export const AnimatedScreen = ({ children, isActive, direction = 'forward' }: An
                     transform: [{ translateX: slideAnim }],
                     opacity: opacityAnim,
                     zIndex: isActive ? 1 : 0,
+                    ...(Platform.OS === 'web' && { pointerEvents: isActive ? 'auto' : 'none' } as any),
                 },
             ]}
-            pointerEvents={isActive ? 'auto' : 'none'}
+            {...(Platform.OS !== 'web' && { pointerEvents: isActive ? 'auto' : 'none' })}
         >
             {children}
         </Animated.View>

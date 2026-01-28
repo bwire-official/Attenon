@@ -7,25 +7,23 @@ import { layout } from '../theme/layout';
 
 export const SplashScreen = () => {
     const { colors, isDark } = useTheme();
-    
+
     return (
         <ScreenWrapper style={{ backgroundColor: colors.background }}>
             <View style={[styles.content, { backgroundColor: colors.background }]}>
-                    <View style={styles.splashContainer}>
-                        <Image 
-                            source={require('../../assets/splash.png')} 
-                            style={[
-                                styles.splashImage,
-                                { tintColor: isDark ? colorPalette.grey[100] : colors.text.primary }
-                            ]}
-                            resizeMode="contain"
-                        />
-                    </View>
-
-                    <View style={styles.footer}>
-                        <ActivityIndicator size="large" color={isDark ? colorPalette.grey[100] : colors.text.primary} />
-                    </View>
+                <View style={styles.splashContainer}>
+                    <Image
+                        source={require('../../assets/splash.png')}
+                        style={styles.splashImage}
+                        tintColor={isDark ? colorPalette.grey[100] : colors.text.primary}
+                        resizeMode="contain"
+                    />
                 </View>
+
+                <View style={styles.footer}>
+                    <ActivityIndicator size="large" color={isDark ? colorPalette.grey[100] : colors.text.primary} />
+                </View>
+            </View>
         </ScreenWrapper>
     );
 };

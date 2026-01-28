@@ -228,7 +228,7 @@ useEffect(() => {
 - full_name
 - reg_number
 - role (student | instructor)
-- face_encoding (vector128, nullable)
+- face_encoding (vector512, nullable)
 - is_face_registered (boolean)
 - avatar_url
 - department

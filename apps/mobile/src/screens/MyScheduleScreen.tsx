@@ -6,11 +6,12 @@ import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
-import { getStudentClasses } from '../services/data';
+import { getStudentClasses, getActiveSession } from '../services/data';
 import type { Class } from '../lib/supabase';
 
 interface MyScheduleScreenProps {
     onBack?: () => void;
+    onNavigateToFaceAttendance?: (classData: Class) => void;
 }
 
 interface ClassWithEnrollment extends Class {
@@ -21,10 +22,11 @@ interface ClassWithEnrollment extends Class {
     };
 }
 
-export const MyScheduleScreen = ({ onBack }: MyScheduleScreenProps) => {
+export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MyScheduleScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const [classes, setClasses] = useState<ClassWithEnrollment[]>([]);
+    const [activeSessions, setActiveSessions] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -53,6 +55,14 @@ export const MyScheduleScreen = ({ onBack }: MyScheduleScreenProps) => {
 
             const studentClasses = await getStudentClasses(user.id);
             setClasses(studentClasses as ClassWithEnrollment[]);
+
+            // Check for active sessions
+            const sessionsMap: Record<string, boolean> = {};
+            await Promise.all(studentClasses.map(async (cls) => {
+                const session = await getActiveSession(cls.id);
+                sessionsMap[cls.id] = !!session;
+            }));
+            setActiveSessions(sessionsMap);
         } catch (error) {
             console.error('Error loading schedule:', error);
             setError('Failed to load schedule. Please try again.');
@@ -248,6 +258,17 @@ export const MyScheduleScreen = ({ onBack }: MyScheduleScreenProps) => {
                                                     </Text>
                                                 </View>
                                             )}
+
+                                            {/* Mark Attendance Button */}
+                                            {activeSessions[classItem.id] && (
+                                                <TouchableOpacity
+                                                    style={[styles.markAttendanceButton, { backgroundColor: colors.primary }]}
+                                                    onPress={() => onNavigateToFaceAttendance?.(classItem)}
+                                                >
+                                                    <Ionicons name="scan-circle-outline" size={20} color={colors.white} />
+                                                    <Text style={styles.markAttendanceText}>Mark Attendance</Text>
+                                                </TouchableOpacity>
+                                            )}
                                         </View>
                                     ))}
                                 </View>
@@ -415,6 +436,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: layout.spacing.xl,
         paddingVertical: layout.spacing.md,
         borderRadius: layout.borderRadius.md,
+    },
+    markAttendanceButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        borderRadius: 8,
+        marginTop: 16,
+        gap: 8,
+    },
+    markAttendanceText: {
+        color: '#FFFFFF',
+        fontFamily: 'Montserrat_600SemiBold',
+        fontSize: 14,
     },
     retryText: {
         color: '#FFFFFF',

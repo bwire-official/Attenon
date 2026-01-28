@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
-import { getStudentAttendance } from '../services/data';
+import { getStudentAttendance, getStudentClasses, getStudentStats } from '../services/data';
 import type { Profile, AttendanceLog } from '../lib/supabase';
 
 const GRID_GAP = layout.spacing.md;
@@ -18,6 +18,8 @@ interface StudentDashboardProps {
     onNavigateToProfile?: () => void;
     onNavigateToAttendanceHistory?: () => void;
     onNavigateToSchedule?: () => void;
+    onNavigateToAllCourses?: () => void;
+    isActive?: boolean;
 }
 
 interface AttendanceWithClass extends AttendanceLog {
@@ -27,7 +29,7 @@ interface AttendanceWithClass extends AttendanceLog {
     } | null;
 }
 
-export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettings, onNavigateToFaceSetup, onNavigateToProfile, onNavigateToAttendanceHistory, onNavigateToSchedule }: StudentDashboardProps) => {
+export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettings, onNavigateToFaceSetup, onNavigateToProfile, onNavigateToAttendanceHistory, onNavigateToSchedule, onNavigateToAllCourses, isActive }: StudentDashboardProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { width: SCREEN_WIDTH } = useWindowDimensions();
@@ -35,42 +37,69 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
     const [loadingProfile, setLoadingProfile] = useState(true);
     const [recentAttendance, setRecentAttendance] = useState<AttendanceWithClass[]>([]);
     const [loadingAttendance, setLoadingAttendance] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [notificationCount, setNotificationCount] = useState(0);
 
-    useEffect(() => {
-        loadUserProfile();
-        loadRecentAttendance();
-        // Mock fetch notifications
-        setNotificationCount(3);
-    }, []);
+    // Summary Stats State
+    const [totalCourses, setTotalCourses] = useState(0);
+    const [overallAttendance, setOverallAttendance] = useState(0);
+    const [todayClasses, setTodayClasses] = useState(0);
 
-    const loadUserProfile = async () => {
+    const initializeDashboard = async (isManualRefresh = false) => {
+        if (!isActive && !isManualRefresh) return;
+
         try {
+            if (isManualRefresh) {
+                setRefreshing(true);
+            } else if (!userProfile) {
+                // Only show skeleton if we don't have a profile yet and it's not a manual refresh
+                setLoadingProfile(true);
+                setLoadingAttendance(true);
+            }
+
             const profile = await getCurrentUser();
             setUserProfile(profile);
+
+            if (profile) {
+                // Fetch stats concurrently
+                const [attendance, classes, stats] = await Promise.all([
+                    getStudentAttendance(profile.id),
+                    getStudentClasses(profile.id),
+                    getStudentStats(profile.id)
+                ]);
+
+                setRecentAttendance((attendance as AttendanceWithClass[]).slice(0, 3));
+                setTotalCourses(classes.length);
+                setOverallAttendance(Math.round(stats.percentage));
+
+                // Calculate today's classes
+                const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+                const forToday = classes.filter(c =>
+                    c.schedule && c.schedule.toLowerCase().includes(today.toLowerCase())
+                ).length;
+                setTodayClasses(forToday);
+            }
         } catch (error) {
-            console.error('Error loading user profile:', error);
+            console.error('Error initializing dashboard:', error);
         } finally {
             setLoadingProfile(false);
+            setLoadingAttendance(false);
+            setRefreshing(false);
         }
     };
 
-    const loadRecentAttendance = async () => {
-        try {
-            const user = await getCurrentUser();
-            if (!user) {
-                setLoadingAttendance(false);
-                return;
-            }
+    useEffect(() => {
+        initializeDashboard();
 
-            const attendance = await getStudentAttendance(user.id);
-            // Get only the 3 most recent records
-            setRecentAttendance((attendance as AttendanceWithClass[]).slice(0, 3));
-        } catch (error) {
-            console.error('Error loading recent attendance:', error);
-        } finally {
-            setLoadingAttendance(false);
-        }
+        // Refresh when component might have been in background/previous state
+        // In this custom navigation, we can use a small hack or simply rely on the fact that
+        // App.js renders screens based on currentScreen.
+
+        setNotificationCount(3);
+    }, [isActive]);
+
+    const onRefresh = () => {
+        initializeDashboard(true);
     };
 
     const formatDate = (dateString: string): string => {
@@ -101,11 +130,9 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
         color?: 'frozenLake' | 'inkBlack' | 'yellowGreen' | null;
     }> = [
             { id: '1', icon: 'calendar-outline', label: 'My Schedule', onPress: () => { onNavigateToSchedule?.(); }, color: 'frozenLake' },
-            { id: '2', icon: 'time-outline', label: 'Attendance History', onPress: () => { onNavigateToAttendanceHistory?.(); }, color: 'inkBlack' },
-            { id: '3', icon: 'bar-chart-outline', label: 'My Statistics', onPress: () => { }, color: 'yellowGreen' },
-            { id: '4', icon: 'library-outline', label: 'All Courses', onPress: () => { } },
-            { id: '5', icon: 'notifications-outline', label: 'Notifications', onPress: () => { onNavigateToNotifications?.(); }, color: 'frozenLake' },
-            { id: '6', icon: 'person-outline', label: 'Profile', onPress: () => { onNavigateToProfile?.(); } },
+            { id: '2', icon: 'bar-chart-outline', label: 'Attendance & Stats', onPress: () => { onNavigateToAttendanceHistory?.(); }, color: 'inkBlack' },
+            { id: '4', icon: 'library-outline', label: 'Available Courses', onPress: () => { onNavigateToAllCourses?.(); }, color: 'frozenLake' },
+            { id: '6', icon: 'person-outline', label: 'Profile', onPress: () => { onNavigateToProfile?.(); }, color: 'yellowGreen' },
             { id: '7', icon: 'settings-outline', label: 'Settings', onPress: () => { onNavigateToSettings?.(); }, color: 'inkBlack' },
             { id: '8', icon: 'help-circle-outline', label: 'Help & Support', onPress: () => { }, color: 'yellowGreen' },
         ];
@@ -182,16 +209,27 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
     const getFirstName = (fullName: string | null | undefined): string => {
         if (!fullName) return 'Student';
         const nameParts = fullName.trim().split(' ');
-        return nameParts[0] || 'Student';
+        const name = nameParts[0] || 'Student';
+        // Proper Case
+        return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
     };
 
     const displayName = getFirstName(userProfile?.full_name);
-    const totalCourses = 4;
-    const overallAttendance = 87.5;
-    const todayClasses = 2;
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView
+            style={[styles.container, { backgroundColor: colors.black }]}
+            contentContainerStyle={{ flexGrow: 1 }}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={[colors.primary]} // Android
+                    tintColor={colors.white} // iOS (white looks better on black header)
+                />
+            }
+        >
             {/* Header Section */}
             <View
                 style={[
@@ -204,12 +242,33 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
             >
                 <View style={styles.headerContent}>
                     <View style={styles.headerLeft}>
-                        <Text style={[styles.greeting, { color: colors.white }]}>
-                            {getGreeting()}
-                        </Text>
-                        <Text style={[styles.name, { color: colors.white }]} numberOfLines={1}>
-                            {displayName}
-                        </Text>
+                        <View style={styles.greetingRow}>
+                            <Text style={[styles.greeting, { color: colors.white }]}>
+                                {getGreeting()}
+                            </Text>
+                        </View>
+                        {loadingProfile ? (
+                            <View style={{
+                                width: 180,
+                                height: 32,
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                borderRadius: 8,
+                                marginTop: 4
+                            }} />
+                        ) : (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <Text style={[styles.name, { color: colors.white }]} numberOfLines={1}>
+                                    {displayName}
+                                </Text>
+                                {userProfile?.is_face_registered && (
+                                    <Ionicons
+                                        name="checkmark-circle"
+                                        size={20}
+                                        color="#22c55e"
+                                    />
+                                )}
+                            </View>
+                        )}
                     </View>
                     <TouchableOpacity
                         style={styles.notificationButton}
@@ -230,7 +289,12 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                 </View>
 
                 {/* Quick Stats or Face Verification Button */}
-                {userProfile?.is_face_registered ? (
+                {loadingProfile ? (
+                    <View style={styles.headerStatsPlaceholder}>
+                        <View style={[styles.placeholderLine, { width: '80%' }]} />
+                        <View style={[styles.placeholderLine, { width: '60%' }]} />
+                    </View>
+                ) : userProfile?.is_face_registered ? (
                     <View style={styles.headerStats}>
                         <View style={styles.headerStatItem}>
                             <View style={[styles.headerStatIcon, {
@@ -287,131 +351,138 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                         </View>
                     </View>
                 ) : (
-                    <TouchableOpacity
-                        style={styles.faceVerifyButton}
-                        onPress={() => onNavigateToFaceSetup?.()}
-                        activeOpacity={0.8}
-                    >
-                        <Ionicons
-                            name="scan-outline"
-                            size={20}
-                            color={colors.white}
-                            style={styles.faceVerifyIcon}
-                        />
-                        <Text style={[styles.faceVerifyButtonText, { color: colors.white }]}>
-                            VERIFY YOUR FACE
-                        </Text>
-                    </TouchableOpacity>
+                    <View style={styles.faceVerifyContainer}>
+                        <TouchableOpacity
+                            style={[styles.faceVerifyButton, { backgroundColor: 'rgba(255, 255, 255, 0.15)' }]}
+                            onPress={() => onNavigateToFaceSetup?.()}
+                            activeOpacity={0.8}
+                        >
+                            <Ionicons
+                                name="scan-outline"
+                                size={20}
+                                color={colors.white}
+                                style={{ marginRight: 8 }}
+                            />
+                            <Text style={[styles.faceVerifyButtonText, { color: colors.white }]}>
+                                VERIFY FACE
+                            </Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.privacyGuarantee}>
+                            <Ionicons name="lock-closed-outline" size={12} color="rgba(255,255,255,0.4)" />
+                            <Text style={styles.privacyText}>Biometrics are encrypted and stored securely.</Text>
+                        </View>
+                    </View>
                 )}
             </View>
 
             {/* Content Section */}
-            <View style={[styles.contentSection, { backgroundColor: colors.white }]}>
-                <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={[
-                        styles.scrollContent,
-                        { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) },
-                    ]}
-                    showsVerticalScrollIndicator={false}
-                >
-                    {/* Quick Actions */}
-                    <Text style={[styles.sectionTitle, {
-                        color: colors.text.primary,
-                        marginTop: userProfile && !userProfile.is_face_registered ? layout.spacing.lg : 0,
-                        marginBottom: layout.spacing.md,
-                    }]}>Quick Actions</Text>
+            <View style={[
+                styles.contentSection,
+                {
+                    backgroundColor: colors.white,
+                    paddingBottom: Math.max(insets.bottom, layout.spacing.xl),
+                    paddingHorizontal: layout.spacing.xl,
+                    paddingTop: layout.spacing.xxl * 2,
+                    minHeight: layout.window.height * 0.6 // Ensure white background covers bottom
+                }
+            ]}>
+                {/* Quick Actions */}
+                <Text style={[styles.sectionTitle, {
+                    color: colors.text.primary,
+                    marginTop: userProfile && !userProfile.is_face_registered ? layout.spacing.lg : 0,
+                    marginBottom: layout.spacing.md,
+                }]}>Quick Actions</Text>
 
-                    <View style={styles.gridContainer}>
-                        {menuItems.map((item) => renderMenuItem(item))}
-                    </View>
+                <View style={styles.gridContainer}>
+                    {menuItems.map((item) => renderMenuItem(item))}
+                </View>
 
-                    {/* Recent Activity */}
-                    <Text style={[styles.sectionTitle, {
-                        color: colors.text.primary,
-                        marginTop: layout.spacing.xl,
-                        marginBottom: layout.spacing.md,
-                    }]}>Recent Activity</Text>
+                {/* Recent Activity */}
+                <Text style={[styles.sectionTitle, {
+                    color: colors.text.primary,
+                    marginTop: layout.spacing.xl,
+                    marginBottom: layout.spacing.md,
+                }]}>Recent Activity</Text>
 
-                    <View style={styles.historyList}>
-                        {loadingAttendance ? (
-                            <View style={[styles.historyItem, {
-                                backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                paddingVertical: layout.spacing.xl,
-                            }]}>
-                                <Text style={{ color: colors.text.secondary }}>Loading...</Text>
-                            </View>
-                        ) : recentAttendance.length === 0 ? (
-                            <View style={[styles.historyItem, {
-                                backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                paddingVertical: layout.spacing.xl,
-                            }]}>
-                                <Text style={{ color: colors.text.secondary }}>No recent activity</Text>
-                            </View>
-                        ) : (
-                            recentAttendance.map(item => {
-                                const status = item.status.charAt(0).toUpperCase() + item.status.slice(1);
-                                const isPresent = item.status === 'present';
-                                const isLate = item.status === 'late';
+                <View style={styles.historyList}>
+                    {loadingAttendance ? (
+                        <View style={[styles.historyItem, {
+                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            paddingVertical: layout.spacing.xl,
+                        }]}>
+                            <Text style={{ color: colors.text.secondary }}>Loading...</Text>
+                        </View>
+                    ) : recentAttendance.length === 0 ? (
+                        <View style={[styles.historyItem, {
+                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            paddingVertical: layout.spacing.xl,
+                        }]}>
+                            <Text style={{ color: colors.text.secondary }}>No recent activity</Text>
+                        </View>
+                    ) : (
+                        recentAttendance.map(item => {
+                            const status = item.status.charAt(0).toUpperCase() + item.status.slice(1);
+                            const isPresent = item.status === 'present';
+                            const isLate = item.status === 'late';
 
-                                return (
-                                    <View key={item.id} style={[styles.historyItem, {
-                                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                                    }]}>
-                                        <View style={styles.historyLeft}>
-                                            <View style={[styles.historyIconContainer, {
-                                                backgroundColor: isPresent || isLate
-                                                    ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
-                                                    : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
-                                            }]}>
-                                                <Ionicons
-                                                    name={isPresent ? 'checkmark-circle' : isLate ? 'time' : 'close-circle'}
-                                                    size={20}
-                                                    color={isPresent || isLate
-                                                        ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
-                                                        : colors.text.secondary}
-                                                />
-                                            </View>
-                                            <View style={styles.historyInfo}>
-                                                <Text style={[styles.historyCourse, {
-                                                    color: colors.text.primary,
-                                                }]}>{item.classes?.course_code || 'Unknown Course'}</Text>
-                                                <Text style={[styles.historyDate, {
-                                                    color: colors.text.secondary,
-                                                }]}>{formatDate(item.timestamp)} • {formatTime(item.timestamp)}</Text>
-                                            </View>
+                            return (
+                                <View key={item.id} style={[styles.historyItem, {
+                                    backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                                }]}>
+                                    <View style={styles.historyLeft}>
+                                        <View style={[styles.historyIconContainer, {
+                                            backgroundColor: isPresent || isLate
+                                                ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
+                                                : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
+                                        }]}>
+                                            <Ionicons
+                                                name={isPresent ? 'checkmark-circle' : isLate ? 'time' : 'close-circle'}
+                                                size={20}
+                                                color={isPresent || isLate
+                                                    ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
+                                                    : colors.text.secondary}
+                                            />
                                         </View>
-                                        <View style={[
-                                            styles.statusBadge,
-                                            {
-                                                backgroundColor: isPresent || isLate
-                                                    ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
-                                                    : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
-                                            }
-                                        ]}>
-                                            <Text style={[
-                                                styles.statusText,
-                                                {
-                                                    color: isPresent || isLate
-                                                        ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
-                                                        : colors.text.secondary,
-                                                }
-                                            ]}>
-                                                {status}
-                                            </Text>
+                                        <View style={styles.historyInfo}>
+                                            <Text style={[styles.historyCourse, {
+                                                color: colors.text.primary,
+                                            }]}>{item.classes?.course_code || 'Unknown Course'}</Text>
+                                            <Text style={[styles.historyDate, {
+                                                color: colors.text.secondary,
+                                            }]}>{formatDate(item.timestamp)} • {formatTime(item.timestamp)}</Text>
                                         </View>
                                     </View>
-                                );
-                            })
-                        )}
-                    </View>
-                </ScrollView>
+                                    <View style={[
+                                        styles.statusBadge,
+                                        {
+                                            backgroundColor: isPresent || isLate
+                                                ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
+                                                : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
+                                        }
+                                    ]}>
+                                        <Text style={[
+                                            styles.statusText,
+                                            {
+                                                color: isPresent || isLate
+                                                    ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
+                                                    : colors.text.secondary,
+                                            }
+                                        ]}>
+                                            {status}
+                                        </Text>
+                                    </View>
+                                </View>
+                            );
+                        })
+                    )}
+                </View>
             </View>
-        </View>
+        </ScrollView>
     );
 };
 
@@ -607,5 +678,103 @@ const styles = StyleSheet.create({
     statusText: {
         fontSize: 12,
         fontFamily: 'Montserrat_600SemiBold',
+    },
+    faceVerifyContainer: {
+        marginTop: layout.spacing.xl,
+        marginBottom: layout.spacing.md,
+    },
+    faceVerifyCard: {
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: 24,
+        padding: layout.spacing.lg,
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    faceVerifyCardLeft: {
+        marginRight: layout.spacing.md,
+    },
+    faceVerifyIconBg: {
+        width: 56,
+        height: 56,
+        borderRadius: 18,
+        backgroundColor: colorPalette.yellowGreen[600],
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    faceVerifyCardRight: {
+        flex: 1,
+    },
+    faceVerifyStatusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    faceVerifyUrgencyText: {
+        fontSize: 10,
+        fontFamily: 'Montserrat_700Bold',
+        color: '#FCA5A5',
+        letterSpacing: 1,
+    },
+    dot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#FCA5A5',
+        marginLeft: 6,
+    },
+    faceVerifyTitle: {
+        fontSize: 18,
+        fontFamily: 'Montserrat_700Bold',
+        color: '#FFFFFF',
+        marginBottom: 2,
+    },
+    faceVerifyDesc: {
+        fontSize: 12,
+        fontFamily: 'Montserrat_400Regular',
+        color: 'rgba(255, 255, 255, 0.6)',
+        lineHeight: 16,
+    },
+    privacyGuarantee: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: layout.spacing.sm,
+        gap: 6,
+    },
+    privacyText: {
+        fontSize: 10,
+        fontFamily: 'Montserrat_400Regular',
+        color: 'rgba(255, 255, 255, 0.4)',
+    },
+    greetingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: layout.spacing.sm,
+    },
+    securityBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    securityBadgeText: {
+        fontSize: 10,
+        fontFamily: 'Montserrat_700Bold',
+    },
+    headerStatsPlaceholder: {
+        height: 120,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: layout.spacing.xl,
+        gap: layout.spacing.sm,
+    },
+    placeholderLine: {
+        height: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 6,
     },
 });

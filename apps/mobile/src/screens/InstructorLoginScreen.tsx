@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { login, logout } from '../services/auth';
 
 interface InstructorLoginScreenProps {
     onLogin?: () => void;
@@ -15,47 +16,64 @@ interface InstructorLoginScreenProps {
 export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: InstructorLoginScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
-    const [emailOrStaffId, setEmailOrStaffId] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showPassword, setShowPassword] = useState(false);
 
-    const handleLogin = () => {
-        if (!emailOrStaffId.trim() || !password.trim()) {
-            setError('Please enter both email/staff ID and password');
+    const handleLogin = async () => {
+        if (!email.trim() || !password.trim()) {
+            setError('Please enter both email and password');
             return;
         }
-        
+
         setLoading(true);
         setError(null);
-        // Simulate API call
-        setTimeout(() => {
+
+        try {
+            const result = await login({ email: email.trim(), password });
+
+            if (result.success && result.user) {
+                // Check for Instructor Role
+                if (result.user.role === 'instructor') {
+                    onLogin?.();
+                } else {
+                    // Not an instructor - Log them out immediately
+                    await logout();
+                    setError('Access Denied. This area is for Instructors only.');
+                }
+            } else {
+                setError(result.error || 'Failed to log in. Please try again.');
+            }
+        } catch (err) {
+            setError('An unexpected error occurred. Please try again.');
+        } finally {
             setLoading(false);
-            onLogin?.();
-        }, 1500);
+        }
     };
 
     return (
         <View style={styles.container}>
             {/* Header Section */}
-            <View style={[styles.headerSection, { 
+            <View style={[styles.headerSection, {
                 backgroundColor: colors.black,
-                paddingTop: insets.top + layout.spacing.md 
+                paddingTop: insets.top + layout.spacing.md
             }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={onBack}
                     style={styles.backButton}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
                         color={colors.white}
                     />
                 </TouchableOpacity>
                 <View style={styles.headerTextContainer}>
                     <Text style={[styles.helloText, { color: colors.white }]}>Hello</Text>
-                    <Text style={[styles.signInText, { color: colors.white }]}>Sign In</Text>
+                    <Text style={[styles.signInText, { color: colors.white }]}>Instructor</Text>
                 </View>
             </View>
 
@@ -64,7 +82,7 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.formSection, { backgroundColor: colors.white }]}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[
                         styles.formContent,
                         { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -75,10 +93,10 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                     {/* Error Message */}
                     {error && (
                         <View style={[styles.errorContainer, { backgroundColor: '#fee' }]}>
-                            <Ionicons 
-                                name="alert-circle" 
-                                size={20} 
-                                color="#c33" 
+                            <Ionicons
+                                name="alert-circle"
+                                size={20}
+                                color="#c33"
                             />
                             <Text style={[styles.errorText, { color: '#c33' }]}>
                                 {error}
@@ -86,23 +104,24 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                         </View>
                     )}
 
-                    {/* Email/Staff ID Input */}
+                    {/* Email Input */}
                     <View style={styles.inputGroup}>
-                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email or Staff ID</Text>
+                        <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email</Text>
                         <TextInput
-                            style={[styles.textInput, { 
+                            style={[styles.textInput, {
                                 color: colorPalette.grey[900],
                                 borderBottomColor: colorPalette.grey[300],
                             }]}
-                            value={emailOrStaffId}
+                            value={email}
                             onChangeText={(text) => {
-                                setEmailOrStaffId(text);
+                                setEmail(text);
                                 setError(null);
                             }}
-                            placeholder="Enter your email or staff ID"
+                            placeholder="instructor@university.edu"
                             placeholderTextColor={colorPalette.grey[400]}
-                            keyboardType="default"
+                            keyboardType="email-address"
                             autoCapitalize="none"
+                            autoComplete="email"
                         />
                     </View>
 
@@ -111,7 +130,7 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                         <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Password</Text>
                         <View style={styles.passwordContainer}>
                             <TextInput
-                                style={[styles.textInput, { 
+                                style={[styles.textInput, {
                                     flex: 1,
                                     color: colorPalette.grey[900],
                                     borderBottomColor: colorPalette.grey[300],
@@ -123,15 +142,26 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
                                 }}
                                 placeholder="••••••"
                                 placeholderTextColor={colorPalette.grey[400]}
-                                secureTextEntry
+                                secureTextEntry={!showPassword}
                                 autoCapitalize="none"
                                 autoComplete="password"
                             />
+                            <TouchableOpacity
+                                onPress={() => setShowPassword(!showPassword)}
+                                style={styles.eyeIcon}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                    size={20}
+                                    color={colorPalette.grey[600]}
+                                />
+                            </TouchableOpacity>
                         </View>
                     </View>
 
                     {/* Forgot Password */}
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.forgotPassword}
                         onPress={onForgotPassword}
                         activeOpacity={0.7}
@@ -143,12 +173,12 @@ export const InstructorLoginScreen = ({ onLogin, onBack, onForgotPassword }: Ins
 
                     {/* Sign In Button */}
                     <TouchableOpacity
-                        style={[styles.signInButton, { 
+                        style={[styles.signInButton, {
                             backgroundColor: colors.black,
-                            opacity: (!emailOrStaffId.trim() || !password.trim() || loading) ? 0.5 : 1,
+                            opacity: (!email.trim() || !password.trim() || loading) ? 0.5 : 1,
                         }]}
                         onPress={handleLogin}
-                        disabled={!emailOrStaffId.trim() || !password.trim() || loading}
+                        disabled={!email.trim() || !password.trim() || loading}
                         activeOpacity={0.8}
                     >
                         {loading ? (
@@ -232,6 +262,10 @@ const styles = StyleSheet.create({
     passwordContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    eyeIcon: {
+        padding: layout.spacing.xs,
+        marginLeft: layout.spacing.sm,
     },
     forgotPassword: {
         alignSelf: 'flex-end',

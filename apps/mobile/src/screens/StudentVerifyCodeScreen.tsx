@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { verifyResetCode } from '../services/auth';
 
 interface StudentVerifyCodeScreenProps {
     email: string;
@@ -65,7 +66,7 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
 
     const handleVerifyCode = async (codeToVerify?: string) => {
         const codeString = codeToVerify || code.join('');
-        
+
         if (codeString.length !== 6) {
             setError('Please enter the complete 6-digit code');
             return;
@@ -74,33 +75,36 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
         setLoading(true);
         setError(null);
 
-        // Simulate API call to verify code
-        setTimeout(() => {
-            setLoading(false);
-            // For now, accept any 6-digit code. In production, verify with backend
-            if (codeString === '123456') {
-                setError('Invalid code. Please try again.');
-            } else {
+        try {
+            const result = await verifyResetCode(email, codeString);
+
+            if (result.success) {
                 onCodeVerified?.();
+            } else {
+                setError(result.error || 'Invalid code. Please try again.');
             }
-        }, 1500);
+        } catch (err) {
+            setError('Verification failed. Please try again.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
         <View style={styles.container}>
             {/* Header Section */}
-            <View style={[styles.headerSection, { 
+            <View style={[styles.headerSection, {
                 backgroundColor: colors.black,
-                paddingTop: insets.top + layout.spacing.md 
+                paddingTop: insets.top + layout.spacing.md
             }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={onBack}
                     style={styles.backButton}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
                         color={colors.white}
                     />
                 </TouchableOpacity>
@@ -115,7 +119,7 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.formSection, { backgroundColor: colors.white }]}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[
                         styles.formContent,
                         { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -126,10 +130,10 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
                     {/* Error Message */}
                     {error && (
                         <View style={[styles.errorContainer, { backgroundColor: '#fee' }]}>
-                            <Ionicons 
-                                name="alert-circle" 
-                                size={20} 
-                                color="#c33" 
+                            <Ionicons
+                                name="alert-circle"
+                                size={20}
+                                color="#c33"
                             />
                             <Text style={[styles.errorText, { color: '#c33' }]}>
                                 {error}
@@ -147,7 +151,7 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
                         {code.map((digit, index) => (
                             <TextInput
                                 key={index}
-                                ref={(ref) => (inputRefs.current[index] = ref)}
+                                ref={(ref) => { inputRefs.current[index] = ref; }}
                                 style={[styles.codeInput, {
                                     borderBottomColor: digit ? colorPalette.grey[900] : colorPalette.grey[300],
                                     color: colorPalette.grey[900],
@@ -164,7 +168,7 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
 
                     {/* Verify Button */}
                     <TouchableOpacity
-                        style={[styles.verifyButton, { 
+                        style={[styles.verifyButton, {
                             backgroundColor: colors.black,
                             opacity: (code.join('').length !== 6 || loading) ? 0.5 : 1,
                         }]}
@@ -180,7 +184,7 @@ export const StudentVerifyCodeScreen = ({ email, onBack, onCodeVerified }: Stude
                     </TouchableOpacity>
 
                     {/* Resend Code */}
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.resendContainer}
                         activeOpacity={0.7}
                     >

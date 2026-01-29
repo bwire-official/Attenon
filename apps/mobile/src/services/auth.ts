@@ -92,7 +92,7 @@ export async function updateProfile(updates: Partial<Profile>): Promise<AuthResp
     }
 }
 
-// Reset password for a user.
+// Reset password for a user (sends email).
 export async function resetPassword(email: string): Promise<{ success: boolean; error?: string }> {
     try {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
@@ -100,5 +100,35 @@ export async function resetPassword(email: string): Promise<{ success: boolean; 
         return { success: true };
     } catch (err) {
         return { success: false, error: 'Reset failed' };
+    }
+}
+
+// Verify the OTP code sent to email.
+export async function verifyResetCode(email: string, code: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { error } = await supabase.auth.verifyOtp({
+            email,
+            token: code,
+            type: 'recovery',
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: 'Verification failed' };
+    }
+}
+
+// Update the user's password (used after verifying OTP).
+export async function updatePassword(password: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const { error } = await supabase.auth.updateUser({
+            password: password
+        });
+
+        if (error) return { success: false, error: error.message };
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: 'Password update failed' };
     }
 }

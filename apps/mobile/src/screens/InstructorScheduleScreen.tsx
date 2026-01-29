@@ -1,325 +1,152 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, RefreshControl, BackHandler, Animated } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, RefreshControl, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
-import { getStudentClasses } from '../services/data';
+import { getInstructorClasses } from '../services/data';
 import type { Class } from '../lib/supabase';
 
-interface MyScheduleScreenProps {
-    onBack?: () => void;
-    onNavigateToFaceAttendance?: (classData: Class) => void;
-}
-
-interface ClassWithEnrollment extends Class {
-    enrollment: {
-        student_id: string;
-        class_id: string;
-        enrolled_at: string;
-    };
+interface InstructorScheduleScreenProps {
+    onBack: () => void;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HEADER_HEIGHT = 200;
 const SHEET_OVERLAP = 50;
 const DAYS_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const CACHE_KEY_SCHEDULE = '@student_schedule_classes';
 
-export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MyScheduleScreenProps) => {
+export const InstructorScheduleScreen = ({ onBack }: InstructorScheduleScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
-    const shimmerAnimation = useRef(new Animated.Value(0)).current;
-    const [classes, setClasses] = useState<ClassWithEnrollment[]>([]);
+
+    const [courses, setCourses] = useState<Class[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [activeTab, setActiveTab] = useState<'today' | 'week'>('today');
-    const [error, setError] = useState<string | null>(null);
-    const [currentTime, setCurrentTime] = useState<Date>(new Date());
+    const [currentTime, setCurrentTime] = useState(new Date());
 
     useEffect(() => {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-            onBack?.();
+            onBack();
             return true;
         });
         return () => backHandler.remove();
     }, [onBack]);
 
-    useEffect(() => {
-        const animation = Animated.loop(
-            Animated.sequence([
-                Animated.timing(shimmerAnimation, {
-                    toValue: 1,
-                    duration: 1500,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(shimmerAnimation, {
-                    toValue: 0,
-                    duration: 1500,
-                    useNativeDriver: true,
-                }),
-            ])
-        );
-        animation.start();
-        return () => animation.stop();
-    }, []);
+    const fetchCourses = async () => {
+        try {
+            const user = await getCurrentUser();
+            if (user) {
+                const data = await getInstructorClasses(user.id);
+                setCourses(data);
+            }
+        } catch (error) {
+            console.error('Error fetching courses:', error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
 
     useEffect(() => {
-        loadCachedData();
+        fetchCourses();
+        // Update timer every minute for countdown
         const timer = setInterval(() => setCurrentTime(new Date()), 60000);
         return () => clearInterval(timer);
     }, []);
 
-    const loadCachedData = async () => {
-        try {
-            const cachedClasses = await AsyncStorage.getItem(CACHE_KEY_SCHEDULE);
-            if (cachedClasses) {
-                setClasses(JSON.parse(cachedClasses));
-                setLoading(false);
-                setIsInitialLoad(false);
-            }
-            loadSchedule();
-        } catch (error) {
-            console.error('Error loading cached schedule:', error);
-            loadSchedule();
-        }
-    };
-
-    const loadSchedule = async (isRefresh = false) => {
-        try {
-            if (isRefresh) {
-                setRefreshing(true);
-            } else if (isInitialLoad) {
-                setLoading(true);
-            }
-            setError(null);
-
-            const user = await getCurrentUser();
-            if (!user) {
-                setError('User not found. Please log in again.');
-                setLoading(false);
-                setRefreshing(false);
-                setIsInitialLoad(false);
-                return;
-            }
-
-            const studentClasses = await getStudentClasses(user.id);
-            setClasses(studentClasses as ClassWithEnrollment[]);
-            await AsyncStorage.setItem(CACHE_KEY_SCHEDULE, JSON.stringify(studentClasses));
-        } catch (error) {
-            console.error('Error loading schedule:', error);
-            setError('Failed to load schedule. Please try again.');
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-            setIsInitialLoad(false);
-        }
-    };
-
     const onRefresh = () => {
-        loadSchedule(true);
+        setRefreshing(true);
+        fetchCourses();
     };
 
-    const formatSchedule = (schedule: string | null): string => {
-        if (!schedule) return 'Schedule not available';
-        try {
-            const parsed = JSON.parse(schedule);
-            if (typeof parsed === 'object') {
-                const days = Object.keys(parsed);
-                return days.map(day => `${day}: ${parsed[day]}`).join(', ');
-            }
-            return schedule;
-        } catch {
-            return schedule;
-        }
+    // --- Schedule Logic ---
+    const parseTime = (timeStr: string) => {
+        // Expected "10:00 AM" or "2:00 PM"
+        const [time, modifier] = timeStr.split(' ');
+        let [hours, minutes] = time.split(':');
+        if (hours === '12') hours = '00';
+        if (modifier === 'PM') hours = String(parseInt(hours, 10) + 12);
+        return { hours: parseInt(hours, 10), minutes: parseInt(minutes, 10) };
     };
 
-    const todayName = useMemo(() => {
-        return new Date().toLocaleDateString('en-US', { weekday: 'long' });
-    }, []);
+    const getNextClass = () => {
+        const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-    const parseTime = (timeStr: string): { hours: number; minutes: number } => {
-        if (!timeStr || typeof timeStr !== 'string') {
-            return { hours: 0, minutes: 0 };
-        }
-        const parts = timeStr.trim().split(' ');
-        if (parts.length !== 2) {
-            return { hours: 0, minutes: 0 };
-        }
-        const [time, modifier] = parts;
-        const timeParts = time.split(':');
-        if (timeParts.length !== 2) {
-            return { hours: 0, minutes: 0 };
-        }
-        let hours = parseInt(timeParts[0], 10);
-        const minutes = parseInt(timeParts[1], 10);
-        if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 12 || minutes < 0 || minutes > 59) {
-            return { hours: 0, minutes: 0 };
-        }
-        const mod = modifier.toUpperCase();
-        if (mod === 'AM') {
-            if (hours === 12) hours = 0;
-        } else if (mod === 'PM') {
-            if (hours !== 12) hours += 12;
-        }
-        return { hours, minutes };
-    };
+        // Filter courses for today
+        const todaysCourses = courses.filter(c => c.schedule && c.schedule.includes(today));
 
-    const parseFirstTimeFromSchedule = (schedule: string | null, day: string): { hours: number; minutes: number; label: string } | null => {
-        if (!schedule) return null;
-        let timePart: string | null = null;
-        try {
-            const parsed = JSON.parse(schedule);
-            if (parsed && typeof parsed === 'object' && parsed[day]) {
-                const value = parsed[day];
-                if (typeof value === 'string') {
-                    timePart = value.split('-')[0].trim();
+        // Find first one that hasn't started (or maybe started recently?)
+        // Assuming formatting "Monday 10:00 AM - 12:00 PM"
+        let upcoming = null;
+        let minDiff = Infinity;
+
+        todaysCourses.forEach(c => {
+            if (!c.schedule) return;
+            // Extract Time part: "Monday 10:00 AM -..." -> "10:00 AM"
+            const timePart = c.schedule.replace(today, '').replace('s', '').trim().split('-')[0].trim();
+            if (!timePart) return;
+
+            try {
+                const { hours, minutes } = parseTime(timePart);
+                const classMinutes = hours * 60 + minutes;
+                const diff = classMinutes - currentMinutes;
+
+                if (diff > 0 && diff < minDiff) {
+                    minDiff = diff;
+                    upcoming = { course: c, diffMinutes: diff, startTime: timePart };
                 }
-            }
-        } catch {
-            let s = schedule;
-            if (s.includes(day + 's')) {
-                s = s.replace(day + 's', '');
-            } else if (s.includes(day)) {
-                s = s.replace(day, '');
-            }
-            const parts = s.trim().split('-');
-            timePart = parts[0]?.trim() || null;
-        }
-        if (!timePart) return null;
-        try {
-            const { hours, minutes } = parseTime(timePart);
-            return { hours, minutes, label: timePart };
-        } catch {
-            return null;
-        }
+            } catch (e) { }
+        });
+
+        return upcoming;
     };
 
-    const formatCountdown = (minutes: number): string => {
+    const nextClassInfo = useMemo(() => getNextClass(), [courses, currentTime]);
+
+    const groupedSchedule = useMemo(() => {
+        const groups: Record<string, Class[]> = {};
+        courses.forEach(course => {
+            if (!course.schedule) return;
+            const day = DAYS_ORDER.find(d => course.schedule?.includes(d + 's') || course.schedule?.includes(d));
+            if (day) {
+                if (!groups[day]) groups[day] = [];
+                groups[day].push(course);
+            }
+        });
+
+        // Sort days
+        const sortedGroups: Record<string, Class[]> = {};
+        DAYS_ORDER.forEach(day => {
+            if (groups[day]) sortedGroups[day] = groups[day];
+        });
+        return sortedGroups;
+    }, [courses]);
+
+    const todaysClasses = useMemo(() => {
+        const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+        return groupedSchedule[today] || [];
+    }, [groupedSchedule]);
+
+    const stats = useMemo(() => {
+        return {
+            todayCount: todaysClasses.length,
+            totalWeekly: courses.filter(c => c.schedule).length,
+            active: courses.length
+        };
+    }, [todaysClasses, courses]);
+
+    const formatCountdown = (minutes: number) => {
         const h = Math.floor(minutes / 60);
         const m = minutes % 60;
         if (h > 0) return `${h}h ${m}m`;
         return `${m}m`;
     };
-
-    const todaysClasses = useMemo(() => {
-        if (!classes.length) return [];
-        return classes.filter((classItem) => {
-            if (!classItem.schedule) return false;
-            try {
-                const parsed = JSON.parse(classItem.schedule);
-                if (parsed && typeof parsed === 'object') {
-                    const days = Object.keys(parsed);
-                    return days.some((day) => day.toLowerCase() === todayName.toLowerCase());
-                }
-            } catch {
-                // fall through to string includes
-            }
-            return classItem.schedule.includes(todayName);
-        });
-    }, [classes, todayName]);
-
-    const nextClassInfo = useMemo<{
-        classItem: ClassWithEnrollment;
-        diffMinutes: number;
-        startLabel: string;
-    } | null>(() => {
-        if (!todaysClasses.length) {
-            return null;
-        }
-        const now = currentTime;
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        let best: { classItem: ClassWithEnrollment; diffMinutes: number; startLabel: string } | null = null;
-        let minDiff = Infinity;
-
-        todaysClasses.forEach((classItem) => {
-            const info = parseFirstTimeFromSchedule(classItem.schedule as string | null, todayName);
-            if (!info) return;
-            const classMinutes = info.hours * 60 + info.minutes;
-            const diff = classMinutes - currentMinutes;
-            if (diff > 0 && diff < minDiff) {
-                minDiff = diff;
-                best = { classItem, diffMinutes: diff, startLabel: info.label };
-            }
-        });
-
-        return best;
-    }, [todaysClasses, currentTime, todayName]);
-
-    const groupedSchedule = useMemo(() => {
-        const groups: Record<string, ClassWithEnrollment[]> = {};
-        classes.forEach(classItem => {
-            if (!classItem.schedule) return;
-            // Add class to ALL matching days, not just the first
-            DAYS_ORDER.forEach(day => {
-                if (classItem.schedule?.includes(day + 's') || classItem.schedule?.includes(day)) {
-                    if (!groups[day]) groups[day] = [];
-                    groups[day].push(classItem);
-                }
-            });
-        });
-
-        const sortedGroups: Record<string, ClassWithEnrollment[]> = {};
-        DAYS_ORDER.forEach(day => {
-            if (groups[day]) sortedGroups[day] = groups[day];
-        });
-        return sortedGroups;
-    }, [classes]);
-
-    const stats = useMemo(() => {
-        return {
-            todayCount: todaysClasses.length,
-            totalWeekly: classes.filter(c => c.schedule).length,
-            enrolled: classes.length
-        };
-    }, [todaysClasses, classes]);
-
-    const shimmerOpacity = shimmerAnimation.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0.3, 0.7],
-    });
-
-    const SkeletonBox = ({ style }: { style?: any }) => (
-        <Animated.View
-            style={[
-                {
-                    backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
-                    borderRadius: 8,
-                    opacity: shimmerOpacity,
-                },
-                style,
-            ]}
-        />
-    );
-
-    const ScheduleCardSkeleton = () => (
-        <View style={[styles.card, {
-            backgroundColor: isDark ? colorPalette.grey[800] : colors.white,
-            borderLeftColor: isDark ? colorPalette.grey[600] : colorPalette.grey[300],
-        }]}>
-            <View style={styles.timeColumn}>
-                <SkeletonBox style={{ width: 16, height: 16, borderRadius: 8 }} />
-                <SkeletonBox style={{ width: 50, height: 12, marginTop: 4 }} />
-            </View>
-            <View style={styles.cardInfo}>
-                <SkeletonBox style={{ width: 60, height: 10, marginBottom: 6 }} />
-                <SkeletonBox style={{ width: '80%', height: 16, marginBottom: 4 }} />
-                <SkeletonBox style={{ width: '60%', height: 12 }} />
-            </View>
-        </View>
-    );
-
-    const ScheduleSkeleton = () => (
-        <View>
-            {[1, 2, 3].map((i) => (
-                <ScheduleCardSkeleton key={i} />
-            ))}
-        </View>
-    );
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -349,6 +176,7 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
                     backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
                     minHeight: SCREEN_HEIGHT - (HEADER_HEIGHT - SHEET_OVERLAP)
                 }]}>
+
                     {/* Overlapping Overview Section */}
                     <View style={styles.overviewHeader}>
                         {/* Circle Metric: Countdown or Icon */}
@@ -379,11 +207,11 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
 
                         {/* Text Info */}
                         <Text style={[styles.pageTitle, { color: colors.text.primary }]}>
-                            {nextClassInfo ? 'Upcoming Class' : 'My Schedule'}
+                            {nextClassInfo ? 'Upcoming Class' : 'Weekly Schedule'}
                         </Text>
                         {nextClassInfo && (
                             <Text style={[styles.subTitle, { color: colors.text.secondary }]}>
-                                {nextClassInfo.classItem.course_code} • {nextClassInfo.startLabel}
+                                {nextClassInfo.course.course_code} • {nextClassInfo.startTime}
                             </Text>
                         )}
 
@@ -394,15 +222,15 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
                                     <Text style={[styles.statValue, { color: colors.text.primary }]}>{stats.todayCount}</Text>
                                     <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Today</Text>
                                 </View>
-                                <View style={[styles.statDivider, { backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[300] }]} />
+                                <View style={styles.statDivider} />
                                 <View style={styles.statItem}>
                                     <Text style={[styles.statValue, { color: colors.text.primary }]}>{stats.totalWeekly}</Text>
                                     <Text style={[styles.statLabel, { color: colors.text.secondary }]}>This Week</Text>
                                 </View>
-                                <View style={[styles.statDivider, { backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[300] }]} />
+                                <View style={styles.statDivider} />
                                 <View style={styles.statItem}>
-                                    <Text style={[styles.statValue, { color: colors.text.primary }]}>{stats.enrolled}</Text>
-                                    <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Enrolled</Text>
+                                    <Text style={[styles.statValue, { color: colors.text.primary }]}>{stats.active}</Text>
+                                    <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Courses</Text>
                                 </View>
                             </View>
                         )}
@@ -410,48 +238,25 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
 
                     {/* Tabs */}
                     <View style={[styles.tabContainer, { backgroundColor: isDark ? colorPalette.grey[900] : colors.white, borderBottomColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200] }]}>
-
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'today' && styles.activeTab]}
                             onPress={() => setActiveTab('today')}
                         >
-                            <Text style={[styles.tabText, { color: activeTab === 'today' ? colors.primary : colors.text.tertiary }]}>
-                                Today's Classes
-                            </Text>
+                            <Text style={[styles.tabText, { color: activeTab === 'today' ? colors.primary : colors.text.tertiary }]}>Today's Classes</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.tab, activeTab === 'week' && styles.activeTab]}
                             onPress={() => setActiveTab('week')}
                         >
-                            <Text style={[styles.tabText, { color: activeTab === 'week' ? colors.primary : colors.text.tertiary }]}>
-                                Full Week
-                            </Text>
+                            <Text style={[styles.tabText, { color: activeTab === 'week' ? colors.primary : colors.text.tertiary }]}>Full Week</Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Content */}
                     <View style={[styles.contentContainer, { paddingBottom: insets.bottom + layout.spacing.xl }]}>
-                        {isInitialLoad && loading ? (
-                            <ScheduleSkeleton />
-                        ) : error ? (
-                            <View style={styles.errorContainer}>
-                                <Ionicons name="alert-circle-outline" size={60} color={colors.error} />
-                                <Text style={[styles.errorText, { color: colors.text.primary }]}>{error}</Text>
-                                <TouchableOpacity
-                                    style={[styles.retryButton, { backgroundColor: colors.primary }]}
-                                    onPress={() => loadSchedule()}
-                                >
-                                    <Text style={styles.retryText}>Retry</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : classes.length === 0 ? (
-                            <View style={styles.emptyState}>
-                                <Ionicons name="calendar-outline" size={60} color={colors.text.tertiary} />
-                                <Text style={[styles.emptyStateText, { color: colors.text.secondary }]}>No classes enrolled</Text>
-                                <Text style={[styles.emptyStateSubtext, { color: colors.text.tertiary }]}>Enroll in classes to see your schedule</Text>
-                            </View>
+                        {loading ? (
+                            <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
                         ) : activeTab === 'today' ? (
-
                             // Today's View
                             todaysClasses.length === 0 ? (
                                 <View style={styles.emptyState}>
@@ -460,25 +265,21 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
                                     <Text style={[styles.emptyStateSubtext, { color: colors.text.tertiary }]}>Enjoy your free time!</Text>
                                 </View>
                             ) : (
-                                todaysClasses.map((classItem, idx) => (
-                                    <View key={`${classItem.id}-${idx}`} style={[styles.card, {
+                                todaysClasses.map((course, idx) => (
+                                    <View key={`${course.id}-${idx}`} style={[styles.card, {
                                         backgroundColor: isDark ? colorPalette.grey[800] : colors.white,
                                         borderLeftColor: colorPalette.frozenLake[500],
                                     }]}>
                                         <View style={styles.timeColumn}>
                                             <Ionicons name="time-outline" size={16} color={colors.text.tertiary} />
                                             <Text style={[styles.timeText, { color: colors.text.primary }]}>
-                                                {classItem.schedule?.replace(/^[A-Za-z]+s?\s/, '')}
+                                                {course.schedule?.replace(/^[A-Za-z]+\s/, '')}
                                             </Text>
                                         </View>
                                         <View style={styles.cardInfo}>
-                                            <Text style={[styles.courseCode, { color: colorPalette.frozenLake[500] }]}>{classItem.course_code}</Text>
-                                            <Text style={[styles.courseTitle, { color: colors.text.primary }]}>{classItem.title}</Text>
-                                            {classItem.department && (
-                                                <Text style={[styles.locationText, { color: colors.text.secondary }]}>
-                                                    {classItem.department} • {classItem.level || 'General'}
-                                                </Text>
-                                            )}
+                                            <Text style={[styles.courseCode, { color: colorPalette.frozenLake[500] }]}>{course.course_code}</Text>
+                                            <Text style={[styles.courseTitle, { color: colors.text.primary }]}>{course.title}</Text>
+                                            <Text style={[styles.locationText, { color: colors.text.secondary }]}>{course.department} • {course.level}</Text>
                                         </View>
                                     </View>
                                 ))
@@ -486,26 +287,26 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
                         ) : (
                             // Weekly View
                             Object.entries(groupedSchedule).map(([day, dayCourses]) => {
-                                const isToday = day === todayName;
+                                const isToday = day === new Date().toLocaleDateString('en-US', { weekday: 'long' });
                                 return (
                                     <View key={day} style={styles.daySection}>
                                         <Text style={[styles.dayTitle, { color: isToday ? colorPalette.frozenLake[500] : colors.text.primary }]}>
                                             {day} {isToday && '(Today)'}
                                         </Text>
-                                        {dayCourses.map((classItem, idx) => (
-                                            <View key={`${classItem.id}-${idx}`} style={[styles.card, {
+                                        {dayCourses.map((course, idx) => (
+                                            <View key={`${course.id}-${idx}`} style={[styles.card, {
                                                 backgroundColor: isDark ? colorPalette.grey[800] : colors.white,
                                                 borderLeftColor: isToday ? colorPalette.frozenLake[500] : colorPalette.grey[300],
                                             }]}>
                                                 <View style={styles.timeColumn}>
                                                     <Ionicons name="time" size={14} color={colors.text.tertiary} />
                                                     <Text style={[styles.timeText, { color: colors.text.secondary }]}>
-                                                        {classItem.schedule?.replace(day + 's ', '').replace(day + ' ', '')}
+                                                        {course.schedule?.replace(day + 's ', '').replace(day + ' ', '')}
                                                     </Text>
                                                 </View>
                                                 <View style={styles.cardInfo}>
-                                                    <Text style={[styles.courseTitle, { color: colors.text.primary }]}>{classItem.course_code}</Text>
-                                                    <Text style={[styles.locationText, { color: colors.text.tertiary }]}>{classItem.title}</Text>
+                                                    <Text style={[styles.courseTitle, { color: colors.text.primary }]}>{course.course_code}</Text>
+                                                    <Text style={[styles.locationText, { color: colors.text.tertiary }]}>{course.title}</Text>
                                                 </View>
                                             </View>
                                         ))}
@@ -523,7 +324,7 @@ export const MyScheduleScreen = ({ onBack, onNavigateToFaceAttendance }: MySched
                     <TouchableOpacity onPress={onBack} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={colors.white} />
                     </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.white }]}>My Schedule</Text>
+                    <Text style={[styles.headerTitle, { color: colors.white }]}>Schedule</Text>
                     <View style={{ width: 40 }} />
                 </View>
             </View>
@@ -644,6 +445,7 @@ const styles = StyleSheet.create({
     statDivider: {
         width: 1,
         height: 20,
+        backgroundColor: '#E5E7EB',
     },
     tabContainer: {
         flexDirection: 'row',
@@ -679,7 +481,7 @@ const styles = StyleSheet.create({
         shadowRadius: 8,
         elevation: 2,
         borderLeftWidth: 4,
-        alignItems: 'flex-start',
+        alignItems: 'center',
     },
     timeColumn: {
         marginRight: layout.spacing.lg,
@@ -729,26 +531,5 @@ const styles = StyleSheet.create({
         fontFamily: 'Montserrat_700Bold',
         marginBottom: layout.spacing.md,
         marginLeft: 4,
-    },
-    errorContainer: {
-        alignItems: 'center',
-        paddingVertical: 40,
-        gap: layout.spacing.sm,
-    },
-    errorText: {
-        fontSize: 16,
-        fontFamily: 'Montserrat_500Medium',
-        textAlign: 'center',
-    },
-    retryButton: {
-        paddingHorizontal: layout.spacing.xl,
-        paddingVertical: layout.spacing.md,
-        borderRadius: layout.borderRadius.md,
-        marginTop: layout.spacing.sm,
-    },
-    retryText: {
-        color: '#FFFFFF',
-        fontFamily: 'Montserrat_600SemiBold',
-        fontSize: 16,
-    },
+    }
 });

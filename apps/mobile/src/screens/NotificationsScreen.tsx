@@ -1,81 +1,37 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, useWindowDimensions, ActivityIndicator, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
+import { useNotifications, AppNotification } from '../hooks/useNotifications';
+import { getCurrentUser } from '../services/session';
 
-interface Notification {
-    id: string;
-    type: 'attendance' | 'course' | 'student' | 'system';
-    title: string;
-    message: string;
-    time: string;
-    read: boolean;
-    value?: string;
+interface NotificationProps {
+    onBack?: () => void;
 }
 
-const mockNotifications: Notification[] = [
-    {
-        id: '1',
-        type: 'attendance',
-        title: 'Weekly Attendance Report',
-        message: 'Your weekly attendance is 92%, up 4% from last week',
-        time: '2 hours ago',
-        read: false,
-        value: '92%',
-    },
-    {
-        id: '2',
-        type: 'course',
-        title: 'New Course Assignment',
-        message: 'You have been assigned to teach CS101 - Introduction to Programming',
-        time: '5 hours ago',
-        read: false,
-    },
-    {
-        id: '3',
-        type: 'student',
-        title: 'Student Registration',
-        message: '5 new students registered for your courses today',
-        time: '1 day ago',
-        read: true,
-        value: '5',
-    },
-    {
-        id: '4',
-        type: 'attendance',
-        title: 'Low Attendance Alert',
-        message: 'CS201 has attendance below 75% this week',
-        time: '2 days ago',
-        read: true,
-        value: '75%',
-    },
-    {
-        id: '5',
-        type: 'system',
-        title: 'System Update',
-        message: 'New features available: Enhanced reporting and analytics',
-        time: '3 days ago',
-        read: true,
-    },
-];
-
-export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
+export const NotificationsScreen = ({ onBack }: NotificationProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { width: SCREEN_WIDTH } = useWindowDimensions();
-    const isTablet = SCREEN_WIDTH >= 768;
+    const [userId, setUserId] = useState<string | null>(null);
 
-    const getNotificationIcon = (type: Notification['type']) => {
+    useEffect(() => {
+        getCurrentUser().then(profile => {
+            if (profile) setUserId(profile.id);
+        });
+    }, []);
+
+    const { notifications, loading, unreadCount, markAsRead, markAllAsRead, refresh } = useNotifications(userId);
+
+    const getNotificationIcon = (type: AppNotification['type']) => {
         switch (type) {
-            case 'attendance':
-                return 'trending-up';
-            case 'course':
-                return 'library';
-            case 'student':
-                return 'people';
+            case 'attendance_session_started':
+                return 'radio';
+            case 'student_attended':
+                return 'checkmark-circle';
             case 'system':
                 return 'notifications';
             default:
@@ -83,13 +39,11 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
         }
     };
 
-    const getNotificationColor = (type: Notification['type']) => {
+    const getNotificationColor = (type: AppNotification['type']) => {
         switch (type) {
-            case 'attendance':
+            case 'attendance_session_started':
                 return isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600];
-            case 'course':
-                return isDark ? colorPalette.inkBlack[300] : colorPalette.inkBlack[600];
-            case 'student':
+            case 'student_attended':
                 return isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600];
             case 'system':
                 return isDark ? colorPalette.grey[400] : colorPalette.grey[600];
@@ -98,13 +52,11 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
         }
     };
 
-    const getNotificationBg = (type: Notification['type']) => {
+    const getNotificationBg = (type: AppNotification['type']) => {
         switch (type) {
-            case 'attendance':
+            case 'attendance_session_started':
                 return isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100];
-            case 'course':
-                return isDark ? colorPalette.inkBlack[900] : colorPalette.inkBlack[100];
-            case 'student':
+            case 'student_attended':
                 return isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100];
             case 'system':
                 return isDark ? colorPalette.grey[800] : colorPalette.grey[200];
@@ -113,7 +65,32 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
         }
     };
 
+    const formatTime = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
 
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays === 1) return 'Yesterday';
+        if (diffDays < 7) return `${diffDays}d ago`;
+
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
+
+
+    const [refreshing, setRefreshing] = useState(false);
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await refresh();
+        setRefreshing(false);
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -152,60 +129,80 @@ export const NotificationsScreen = ({ onBack }: { onBack?: () => void }) => {
                     style={styles.scrollView}
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                    }
                 >
-
-
-                    <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                        Recent Updates
-                    </Text>
+                    <View style={styles.sectionHeader}>
+                        <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                            {unreadCount > 0 ? `Unread (${unreadCount})` : 'Notifications'}
+                        </Text>
+                        {notifications.length > 0 && (
+                            <TouchableOpacity onPress={markAllAsRead}>
+                                <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all as read</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
 
                     {/* Notifications List */}
                     <View style={styles.notificationsList}>
-                        {mockNotifications.map((notification) => (
-                            <TouchableOpacity
-                                key={notification.id}
-                                style={[styles.notificationItem, {
-                                    backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                                    opacity: notification.read ? 0.7 : 1,
-                                }]}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.notificationIconWrapper, {
-                                    backgroundColor: getNotificationBg(notification.type),
-                                }]}>
-                                    <Ionicons
-                                        name={getNotificationIcon(notification.type) as any}
-                                        size={24}
-                                        color={getNotificationColor(notification.type)}
-                                    />
-                                </View>
-                                <View style={styles.notificationContent}>
-                                    <View style={styles.notificationHeader}>
-                                        <Text style={[styles.notificationTitle, {
-                                            color: colors.text.primary,
-                                            fontFamily: notification.read ? 'Montserrat_500Medium' : 'Montserrat_600SemiBold',
-                                        }]} numberOfLines={1}>
-                                            {notification.title}
-                                        </Text>
-                                        <Text style={[styles.notificationTime, {
-                                            color: colors.text.tertiary,
-                                        }]}>
-                                            {notification.time}
+                        {loading && notifications.length === 0 ? (
+                            <View style={styles.centerContainer}>
+                                <ActivityIndicator size="large" color={colors.primary} />
+                            </View>
+                        ) : notifications.length === 0 ? (
+                            <View style={styles.centerContainer}>
+                                <Ionicons name="notifications-off-outline" size={48} color={colors.text.tertiary} />
+                                <Text style={[styles.emptyText, { color: colors.text.secondary }]}>No notifications yet</Text>
+                            </View>
+                        ) : (
+                            notifications.map((notification) => (
+                                <TouchableOpacity
+                                    key={notification.id}
+                                    style={[styles.notificationItem, {
+                                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                                        opacity: notification.is_read ? 0.7 : 1,
+                                    }]}
+                                    activeOpacity={0.7}
+                                    onPress={() => markAsRead(notification.id)}
+                                >
+                                    <View style={[styles.notificationIconWrapper, {
+                                        backgroundColor: getNotificationBg(notification.type),
+                                    }]}>
+                                        <Ionicons
+                                            name={getNotificationIcon(notification.type) as any}
+                                            size={24}
+                                            color={getNotificationColor(notification.type)}
+                                        />
+                                    </View>
+                                    <View style={styles.notificationContent}>
+                                        <View style={styles.notificationHeader}>
+                                            <Text style={[styles.notificationTitle, {
+                                                color: colors.text.primary,
+                                                fontFamily: notification.is_read ? 'Montserrat_500Medium' : 'Montserrat_600SemiBold',
+                                            }]} numberOfLines={1}>
+                                                {notification.title}
+                                            </Text>
+                                            <Text style={[styles.notificationTime, {
+                                                color: colors.text.tertiary,
+                                            }]}>
+                                                {formatTime(notification.created_at)}
+                                            </Text>
+                                        </View>
+                                        <Text style={[styles.notificationMessage, {
+                                            color: colors.text.secondary,
+                                        }]} numberOfLines={2}>
+                                            {notification.message}
                                         </Text>
                                     </View>
-                                    <Text style={[styles.notificationMessage, {
-                                        color: colors.text.secondary,
-                                    }]} numberOfLines={2}>
-                                        {notification.message}
-                                    </Text>
-                                </View>
-                                {!notification.read && (
-                                    <View style={[styles.unreadDot, {
-                                        backgroundColor: colorPalette.yellowGreen[500],
-                                    }]} />
-                                )}
-                            </TouchableOpacity>
-                        ))}
+                                    {!notification.is_read && (
+                                        <View style={[styles.unreadDot, {
+                                            backgroundColor: colorPalette.yellowGreen[500],
+                                        }]} />
+                                    )}
+                                </TouchableOpacity>
+                            ))
+                        )}
                     </View>
                 </ScrollView>
             </View>
@@ -259,10 +256,29 @@ const styles = StyleSheet.create({
         paddingBottom: layout.spacing.xl * 2,
     },
 
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: layout.spacing.md,
+    },
     sectionTitle: {
         fontSize: 18,
         fontFamily: 'Montserrat_600SemiBold',
-        marginBottom: layout.spacing.md,
+    },
+    markAllText: {
+        fontSize: 12,
+        fontFamily: 'Montserrat_600SemiBold',
+    },
+    centerContainer: {
+        paddingVertical: layout.spacing.xxl,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyText: {
+        marginTop: layout.spacing.md,
+        fontSize: 14,
+        fontFamily: 'Montserrat_500Medium',
     },
     notificationsList: {
         gap: layout.spacing.md,

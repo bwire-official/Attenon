@@ -17,7 +17,10 @@ import { verifyFace } from '../services/face-api';
 import { logAttendance, getActiveSession } from '../services/data';
 import { getCurrentUser } from '../services/session';
 import { Class } from '../lib/supabase';
-import { Camera, useCameraDevice, useCameraPermission } from 'react-native-vision-camera';
+import { Camera, useCameraDevice, useCameraPermission, useFrameProcessor } from 'react-native-vision-camera';
+import { useFaceDetector } from 'react-native-vision-camera-face-detector';
+import { useFaceValidation } from '../hooks/useFaceValidation';
+import { Worklets } from 'react-native-worklets-core';
 
 interface FaceAttendanceScreenProps {
     classData: Class | null;
@@ -32,11 +35,38 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
     const [error, setError] = useState<string | null>(null);
     const [capturedImage, setCapturedImage] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [isCameraActive, setIsCameraActive] = useState(true);
 
     // Vision Camera Setup
     const device = useCameraDevice('front');
     const { hasPermission, requestPermission } = useCameraPermission();
     const camera = useRef<Camera>(null);
+
+    // Face Detection Setup
+    const { detectFaces } = useFaceDetector({
+        performanceMode: 'fast',
+        classificationMode: 'all',
+        minFaceSize: 0.15,
+    });
+
+    // Validation Hook
+    const {
+        validationState,
+        currentInstruction,
+        processFaces,
+        resetValidation,
+        isReadyToCapture,
+    } = useFaceValidation({
+        enabled: !capturedImage && hasPermission && !verifying && !success && isCameraActive,
+    });
+
+    const runProcessFaces = Worklets.createRunOnJS(processFaces);
+
+    const frameProcessor = useFrameProcessor((frame) => {
+        'worklet';
+        const faces = detectFaces(frame);
+        runProcessFaces(faces, frame.width, frame.height);
+    }, [detectFaces, runProcessFaces]);
 
     // Request permission on mount
     useEffect(() => {
@@ -44,6 +74,42 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
             requestPermission();
         }
     }, [hasPermission]);
+
+    const handleTakePicture = React.useCallback(async () => {
+        if (!camera.current || verifying || !isCameraActive) return;
+
+        setError(null);
+
+        try {
+            console.log('[FaceAttendance] Taking photo...');
+            const photo = await camera.current.takePhoto({
+                flash: 'off',
+                enableShutterSound: false,
+            });
+
+            console.log('[FaceAttendance] Photo taken:', {
+                path: photo.path,
+                width: photo.width,
+                height: photo.height,
+            });
+
+            // Only deactivate camera AFTER photo is successfully taken
+            const imageUri = `file://${photo.path}`;
+            console.log('[FaceAttendance] Setting captured image URI:', imageUri);
+            setCapturedImage(imageUri);
+            setIsCameraActive(false);
+        } catch (err: any) {
+            console.error('[FaceAttendance] Capture error:', err);
+            setError('Failed to take picture. Please try again.');
+        }
+    }, [verifying, isCameraActive]);
+
+    // Auto-capture when liveness check passes
+    useEffect(() => {
+        if (isReadyToCapture && !capturedImage && !verifying && !success && isCameraActive) {
+            handleTakePicture();
+        }
+    }, [isReadyToCapture, capturedImage, verifying, success, isCameraActive, handleTakePicture]);
 
     // If no class data, show error (should not happen)
     if (!classData) {
@@ -57,23 +123,22 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
         );
     }
 
-    const handleTakePicture = async () => {
-        if (!camera.current) return;
-        try {
-            const photo = await camera.current.takePhoto({
-                flash: 'off',
-                enableShutterSound: false,
-            });
-            setCapturedImage(`file://${photo.path}`);
-        } catch (err) {
-            console.error(err);
-            setError('Failed to take picture.');
-        }
+
+
+
+
+    const handleRetake = () => {
+        setCapturedImage(null);
+        setError(null);
+        setVerifying(false);
+        setIsCameraActive(true);
+        resetValidation();
     };
 
     const handleVerifyAndMark = async () => {
         if (!capturedImage) return;
 
+        console.log('[FaceAttendance] Starting verification with image:', capturedImage);
         setVerifying(true);
         setError(null);
 
@@ -90,11 +155,13 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
                 return;
             }
 
+            console.log('[FaceAttendance] Calling verifyFace API...');
             // 1. Verify Face with timeout
             const verification = await Promise.race([
                 verifyFace(capturedImage, classData.id),
                 timeoutPromise
             ]) as any;
+            console.log('[FaceAttendance] Verification result:', verification);
 
             if (!verification.success || !verification.match) {
                 setError(verification.error || 'Face not recognized. Please try again.');
@@ -121,9 +188,7 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
 
             if (result) {
                 setSuccess(true);
-                setTimeout(() => {
-                    onComplete();
-                }, 2000);
+                // No auto-redirect - user will tap Continue
             } else {
                 setError('Failed to mark attendance in database.');
             }
@@ -163,9 +228,23 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
 
                     {success ? (
                         <View style={styles.successContainer}>
-                            <Ionicons name="checkmark-circle" size={80} color={colorPalette.yellowGreen[500]} />
+                            <View style={styles.successIconWrapper}>
+                                <View style={styles.successIconCircle}>
+                                    <Ionicons name="checkmark" size={60} color="#fff" />
+                                </View>
+                            </View>
                             <Text style={styles.successText}>Attendance Marked!</Text>
-                            <Text style={styles.successSubtext}>You have been marked present.</Text>
+                            <Text style={styles.successSubtext}>
+                                Your attendance for {classData.course_code} - {classData.title} has been recorded successfully.
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.continueButton}
+                                onPress={onComplete}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.continueButtonText}>Continue</Text>
+                                <Ionicons name="arrow-forward" size={20} color="#fff" />
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <>
@@ -177,11 +256,12 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
                                     <ActivityIndicator size="large" color={colors.primary} />
                                 ) : hasPermission ? (
                                     <Camera
+                                        ref={camera}
                                         style={styles.previewImage}
                                         device={device}
-                                        isActive={true}
-                                        ref={camera}
+                                        isActive={isCameraActive && !success}
                                         photo={true}
+                                        frameProcessor={frameProcessor}
                                     />
                                 ) : (
                                     <View style={styles.placeholderContainer}>
@@ -201,16 +281,29 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
                                 </View>
                             )}
 
+                            <Text style={[styles.instructions, { color: validationState === 'SUCCESS' ? colorPalette.frozenLake[500] : colors.text.secondary }]}>
+                                {capturedImage ? 'Review capture' : (currentInstruction || 'Position your face in the frame')}
+                            </Text>
                             {/* Actions */}
                             <View style={styles.actions}>
                                 {!capturedImage ? (
                                     hasPermission ? (
                                         <TouchableOpacity
-                                            style={[styles.captureButton, { backgroundColor: colors.black }]}
-                                            onPress={handleTakePicture}
+                                            style={[styles.verifyButton, { backgroundColor: colorPalette.frozenLake[600], opacity: (isReadyToCapture || !capturedImage) ? 1 : 0.5 }]}
+                                            onPress={() => {
+                                                if (!capturedImage) handleTakePicture();
+                                                else handleVerifyAndMark();
+                                            }}
+                                            disabled={verifying}
                                         >
-                                            <Ionicons name="camera" size={24} color={colors.white} />
-                                            <Text style={[styles.buttonText, { color: colors.white }]}>Capture Face</Text>
+                                            {verifying ? (
+                                                <ActivityIndicator color={colors.white} />
+                                            ) : (
+                                                <>
+                                                    <Ionicons name="checkmark-circle-outline" size={24} color={colors.white} />
+                                                    <Text style={[styles.buttonText, { color: colors.white }]}>Mark Attendance</Text>
+                                                </>
+                                            )}
                                         </TouchableOpacity>
                                     ) : (
                                         <TouchableOpacity
@@ -236,7 +329,7 @@ export const FaceAttendanceScreen = ({ classData, onBack, onComplete }: FaceAtte
 
                                         <TouchableOpacity
                                             style={styles.retakeButton}
-                                            onPress={() => setCapturedImage(null)}
+                                            onPress={handleRetake}
                                             disabled={verifying}
                                         >
                                             <Text style={styles.retakeText}>Retake Photo</Text>
@@ -363,6 +456,13 @@ const styles = StyleSheet.create({
         fontFamily: 'Montserrat_600SemiBold',
         color: '#666',
     },
+    instructions: {
+        fontSize: 14,
+        fontFamily: 'Montserrat_500Medium',
+        marginBottom: layout.spacing.lg,
+        textAlign: 'center',
+        paddingHorizontal: 20,
+    },
     errorContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -382,16 +482,58 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         padding: 40,
-        gap: 16,
+        gap: 20,
+        flex: 1,
+    },
+    successIconWrapper: {
+        marginBottom: 10,
+    },
+    successIconCircle: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#22C55E',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#22C55E',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
     },
     successText: {
-        fontSize: 24,
+        fontSize: 26,
         fontFamily: 'Montserrat_700Bold',
-        color: colorPalette.yellowGreen[600],
+        color: '#16A34A',
+        textAlign: 'center',
     },
     successSubtext: {
-        fontSize: 16,
+        fontSize: 15,
         fontFamily: 'Montserrat_400Regular',
         color: '#666',
+        textAlign: 'center',
+        lineHeight: 22,
+        paddingHorizontal: 10,
+    },
+    continueButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#22C55E',
+        paddingVertical: 16,
+        paddingHorizontal: 40,
+        borderRadius: 30,
+        marginTop: 20,
+        gap: 10,
+        shadowColor: '#22C55E',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    continueButtonText: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_700Bold',
+        color: '#fff',
     },
 });

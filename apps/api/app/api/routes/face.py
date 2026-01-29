@@ -50,9 +50,12 @@ def get_face_app() -> FaceAnalysis:
         # Initialize with BUFFALO_L model (provides 512-dim embeddings)
         _face_app = FaceAnalysis(
             name='buffalo_l',
-            providers=['CPUExecutionProvider']  # Use CPU by default, can add CUDAExecutionProvider for GPU
+            providers=['CPUExecutionProvider'],
+            allowed_modules=['detection', 'recognition']
         )
-        _face_app.prepare(ctx_id=-1, det_size=(640, 640))  # ctx_id=-1 for CPU, 0+ for GPU
+        # Standard detection size - works well with phone camera images
+        _face_app.prepare(ctx_id=-1, det_size=(640, 640))
+        logger.info("InsightFace FaceAnalysis initialized")
     return _face_app
 
 
@@ -74,6 +77,52 @@ class FaceMatchResponse(BaseModel):
     message: Optional[str] = None
 
 
+def fix_image_orientation(image: Image.Image) -> Image.Image:
+    """Fix image orientation based on EXIF data (common issue with phone cameras)."""
+    try:
+        from PIL import ExifTags
+        
+        # Find the orientation tag
+        orientation_key = None
+        for key, val in ExifTags.TAGS.items():
+            if val == 'Orientation':
+                orientation_key = key
+                break
+        
+        if orientation_key is None:
+            return image
+        
+        exif = image._getexif()
+        if exif is None:
+            return image
+        
+        orientation = exif.get(orientation_key)
+        if orientation is None:
+            return image
+        
+        # Apply rotation based on EXIF orientation
+        if orientation == 2:
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 3:
+            image = image.rotate(180)
+        elif orientation == 4:
+            image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        elif orientation == 5:
+            image = image.rotate(-90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 6:
+            image = image.rotate(-90, expand=True)
+        elif orientation == 7:
+            image = image.rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT)
+        elif orientation == 8:
+            image = image.rotate(90, expand=True)
+        
+        logger.info(f"Fixed image orientation (EXIF orientation: {orientation})")
+        return image
+    except Exception as e:
+        logger.warning(f"Could not fix EXIF orientation: {e}")
+        return image
+
+
 def extract_face_encoding(image_data: bytes) -> Optional[List[float]]:
     """Extract 512-dimensional face encoding from image bytes using InsightFace."""
     logger.info(f"Extracting face encoding from image ({len(image_data)} bytes)...")
@@ -89,21 +138,46 @@ def extract_face_encoding(image_data: bytes) -> Optional[List[float]]:
         # Load image
         image = Image.open(io.BytesIO(image_data))
         
+        # Fix EXIF orientation (critical for phone camera images)
+        image = fix_image_orientation(image)
+        
         # Convert to RGB if needed
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
+        # Log image dimensions for debugging
+        width, height = image.size
+        logger.info(f"Image size after processing: {width}x{height}")
+        
+        # Resize very large images to improve detection (InsightFace works best around 640x640)
+        max_dimension = 1280
+        if width > max_dimension or height > max_dimension:
+            scale = max_dimension / max(width, height)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            image = image.resize((new_width, new_height), Image.LANCZOS)
+            logger.info(f"Resized image to: {new_width}x{new_height}")
+        
         image_array = np.array(image)
+        
+        # InsightFace expects BGR format (like OpenCV), but PIL gives RGB
+        # Convert RGB to BGR for InsightFace
+        image_array_bgr = image_array[:, :, ::-1]
         
         # Get InsightFace app instance
         app = get_face_app()
         
         # Detect and extract face embeddings
-        faces = app.get(image_array)
+        faces = app.get(image_array_bgr)
         
         if len(faces) == 0:
-            logger.warning("No faces detected in image")
-            return None
+            logger.warning(f"No faces detected in image ({width}x{height})")
+            # Try with original RGB just in case
+            faces = app.get(image_array)
+            if len(faces) == 0:
+                logger.warning("Still no faces detected after RGB fallback")
+                return None
+            logger.info("Face detected using RGB fallback")
         
         if len(faces) > 1:
             logger.error(f"Multiple faces detected: {len(faces)}")
@@ -253,10 +327,11 @@ async def verify_face(
         )
     
     token = authorization.split(" ")[1]
-    verify_token(token) # Just ensure token is valid, identification comes from face
+    verify_token(token)
     logger.info(f"Verification request received" + (f" for class {class_id}" if class_id else ""))
     
     # Validate file type
+    logger.info(f"File content type: {file.content_type}, filename: {file.filename}")
     if not file.content_type or not file.content_type.startswith("image/"):
         logger.error(f"Invalid file type: {file.content_type}")
         raise HTTPException(
@@ -266,6 +341,15 @@ async def verify_face(
     
     # Read image data
     image_data = await file.read()
+    logger.info(f"Received image data: {len(image_data)} bytes")
+    
+    if len(image_data) < 1000:
+        logger.error(f"Image data too small: {len(image_data)} bytes - likely corrupted or empty")
+        return FaceMatchResponse(
+            success=True,
+            match=False,
+            message="Invalid image data received. Please try again."
+        )
     
     # Extract face encoding in a separate thread
     import asyncio
@@ -277,7 +361,7 @@ async def verify_face(
         return FaceMatchResponse(
             success=True,
             match=False,
-            message="No face detected in the image"
+            message="No face detected in the image. Please ensure your face is clearly visible and try again."
         )
     
     logger.info(f"Encoding extracted, querying Supabase (threshold: {settings.FACE_MATCH_THRESHOLD})...")

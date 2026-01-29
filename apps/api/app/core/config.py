@@ -47,7 +47,8 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in self.ALLOWED_ORIGINS_STR.split(',')]
         # Default based on environment
         if self.ENVIRONMENT == "production":
-            return ["http://localhost:3000"]
+            # Production requires explicit ALLOWED_ORIGINS_STR - deny all by default
+            return []
         # Non-production: allow all origins for mobile development
         return ["*"]
     

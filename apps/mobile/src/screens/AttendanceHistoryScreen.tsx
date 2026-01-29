@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
 import { getStudentAttendance, getStudentStats } from '../services/data';
 import type { AttendanceLog } from '../lib/supabase';
+
+const CACHE_KEY_ATTENDANCE = '@student_attendance_history';
 
 interface AttendanceHistoryScreenProps {
     onBack?: () => void;
@@ -23,6 +26,7 @@ interface AttendanceWithClass extends AttendanceLog {
 export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const [attendanceLogs, setAttendanceLogs] = useState<AttendanceWithClass[]>([]);
     const [stats, setStats] = useState({
         total: 0,
@@ -32,18 +36,53 @@ export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps
         percentage: 0,
     });
     const [loading, setLoading] = useState(true);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [studentId, setStudentId] = useState<string | null>(null);
 
     useEffect(() => {
-        loadAttendanceData();
+        const animation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmerAnimation, {
+                    toValue: 1,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(shimmerAnimation, {
+                    toValue: 0,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        animation.start();
+        return () => animation.stop();
     }, []);
+
+    useEffect(() => {
+        loadCachedData();
+    }, []);
+
+    const loadCachedData = async () => {
+        try {
+            const cachedData = await AsyncStorage.getItem(CACHE_KEY_ATTENDANCE);
+            if (cachedData) {
+                setAttendanceLogs(JSON.parse(cachedData));
+                setLoading(false);
+                setIsInitialLoad(false);
+            }
+            loadAttendanceData();
+        } catch (error) {
+            console.error('Error loading cached attendance:', error);
+            loadAttendanceData();
+        }
+    };
 
     const loadAttendanceData = async (isRefresh = false) => {
         try {
             if (isRefresh) {
                 setRefreshing(true);
-            } else {
+            } else if (isInitialLoad) {
                 setLoading(true);
             }
 
@@ -51,16 +90,19 @@ export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps
             if (!user) {
                 setLoading(false);
                 setRefreshing(false);
+                setIsInitialLoad(false);
                 return;
             }
 
             const logs = await getStudentAttendance(user.id);
             setAttendanceLogs(logs as AttendanceWithClass[]);
+            await AsyncStorage.setItem(CACHE_KEY_ATTENDANCE, JSON.stringify(logs));
         } catch (error) {
             console.error('Error loading attendance data:', error);
         } finally {
             setLoading(false);
             setRefreshing(false);
+            setIsInitialLoad(false);
         }
     };
 
@@ -127,31 +169,50 @@ export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps
         }
     };
 
-    if (loading) {
-        return (
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.headerSection, {
-                    backgroundColor: colors.black,
-                    paddingTop: insets.top + layout.spacing.md,
-                }]}>
-                    <View style={styles.headerContent}>
-                        <TouchableOpacity
-                            style={styles.backButton}
-                            onPress={onBack}
-                            activeOpacity={0.7}
-                        >
-                            <Ionicons name="arrow-back" size={24} color={colors.white} />
-                        </TouchableOpacity>
-                        <Text style={[styles.headerTitle, { color: colors.white }]}>Attendance History</Text>
-                        <View style={styles.headerRight} />
-                    </View>
+    const shimmerOpacity = shimmerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.3, 0.7],
+    });
+
+    const SkeletonBox = ({ style }: { style?: any }) => (
+        <Animated.View
+            style={[
+                {
+                    backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                    borderRadius: 8,
+                    opacity: shimmerOpacity,
+                },
+                style,
+            ]}
+        />
+    );
+
+    const AttendanceItemSkeleton = () => (
+        <View style={[styles.historyItem, {
+            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+        }]}>
+            <SkeletonBox style={styles.statusIndicator} />
+            <View style={styles.historyContent}>
+                <View style={styles.historyHeader}>
+                    <SkeletonBox style={{ width: 100, height: 16, flex: 0 }} />
+                    <SkeletonBox style={{ width: 60, height: 20, borderRadius: 4 }} />
                 </View>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
+                <SkeletonBox style={{ width: '70%', height: 14, marginBottom: 8 }} />
+                <View style={styles.historyFooter}>
+                    <SkeletonBox style={{ width: 80, height: 12 }} />
+                    <SkeletonBox style={{ width: 60, height: 12 }} />
                 </View>
             </View>
-        );
-    }
+        </View>
+    );
+
+    const AttendanceSkeleton = () => (
+        <View style={styles.historyList}>
+            {[1, 2, 3, 4, 5].map((i) => (
+                <AttendanceItemSkeleton key={i} />
+            ))}
+        </View>
+    );
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background, flex: 1 }]}>
@@ -180,7 +241,7 @@ export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps
 
             {/* Content Section */}
             <View style={[styles.contentSection, { 
-                backgroundColor: isDark ? colorPalette.grey[50] : colors.white 
+                backgroundColor: isDark ? colorPalette.grey[900] : colors.white 
             }]}>
                 <ScrollView
                     style={styles.scrollView}
@@ -211,7 +272,9 @@ export const AttendanceHistoryScreen = ({ onBack }: AttendanceHistoryScreenProps
                                 Recent Attendance
                             </Text>
                         </View>
-                        {attendanceLogs.length === 0 ? (
+                        {isInitialLoad && loading ? (
+                            <AttendanceSkeleton />
+                        ) : attendanceLogs.length === 0 ? (
                             <View style={[styles.emptyState, {
                                 backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
                             }]}>

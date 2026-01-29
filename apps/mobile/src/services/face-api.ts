@@ -84,6 +84,8 @@ export async function registerFace(imageUri: string, userId: string): Promise<Fa
 // Returns match result with user info and confidence.
 export async function verifyFace(imageUri: string, classId?: string): Promise<FaceMatchResponse> {
     try {
+        console.log(`[Face API] verifyFace called with imageUri: ${imageUri}`);
+        
         const formData = new FormData();
 
         // React Native: Use file URI directly
@@ -106,6 +108,7 @@ export async function verifyFace(imageUri: string, classId?: string): Promise<Fa
             };
         }
 
+        console.log(`[Face API] Sending verify request to ${API_CONFIG.FACE_API_URL}/verify-face`);
         const apiResponse = await fetch(`${API_CONFIG.FACE_API_URL}/verify-face`, {
             method: 'POST',
             body: formData,
@@ -116,7 +119,13 @@ export async function verifyFace(imageUri: string, classId?: string): Promise<Fa
             cache: 'no-cache',
         });
 
+        console.log(`[Face API] Response status: ${apiResponse.status}`);
         const data = await apiResponse.json();
+        // Only log non-PII fields in development
+        if (__DEV__) {
+            const sanitizedData = { success: data.success, match: data.match, confidence: data.confidence };
+            console.log(`[Face API] Response (sanitized):`, sanitizedData);
+        }
 
         if (!apiResponse.ok) {
             return {

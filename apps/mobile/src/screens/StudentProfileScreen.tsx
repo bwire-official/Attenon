@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Dimensions, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
 import type { Profile } from '../lib/supabase';
 
+const CACHE_KEY_PROFILE = '@student_profile_data';
+
 interface StudentProfileScreenProps {
     onBack?: () => void;
 }
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const HEADER_HEIGHT = 200;
+const SHEET_OVERLAP = 50;
 
 interface ProfileInfoItem {
     label: string;
@@ -22,49 +29,134 @@ interface ProfileInfoItem {
 export const StudentProfileScreen = ({ onBack }: StudentProfileScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
+    const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
 
     useEffect(() => {
-        loadProfile();
+        const animation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmerAnimation, {
+                    toValue: 1,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(shimmerAnimation, {
+                    toValue: 0,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        animation.start();
+        return () => animation.stop();
     }, []);
+
+    useEffect(() => {
+        loadCachedData();
+    }, []);
+
+    const loadCachedData = async () => {
+        try {
+            const cachedProfile = await AsyncStorage.getItem(CACHE_KEY_PROFILE);
+            if (cachedProfile) {
+                setProfile(JSON.parse(cachedProfile));
+                setLoading(false);
+                setIsInitialLoad(false);
+            }
+            loadProfile();
+        } catch (error) {
+            console.error('Error loading cached profile:', error);
+            loadProfile();
+        }
+    };
 
     const loadProfile = async () => {
         try {
             const userProfile = await getCurrentUser();
             setProfile(userProfile);
+            if (userProfile) {
+                await AsyncStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(userProfile));
+            }
         } catch (error) {
             console.error('Error loading profile:', error);
         } finally {
             setLoading(false);
+            setIsInitialLoad(false);
         }
     };
 
-    if (loading) {
-        return (
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={[styles.headerSection, {
-                    backgroundColor: colors.black,
-                    paddingTop: insets.top + layout.spacing.md,
-                }]}>
-                    <View style={styles.headerContent}>
-                        <TouchableOpacity
-                            style={styles.backButton}
-                            onPress={onBack}
-                            activeOpacity={0.7}
-                        >
-                            <Ionicons name="arrow-back" size={24} color={colors.white} />
-                        </TouchableOpacity>
-                        <Text style={[styles.headerTitle, { color: colors.white }]}>Profile</Text>
-                        <View style={styles.headerRight} />
-                    </View>
+    const shimmerOpacity = shimmerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.3, 0.7],
+    });
+
+    const SkeletonBox = ({ style }: { style?: any }) => (
+        <Animated.View
+            style={[
+                {
+                    backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                    borderRadius: 8,
+                    opacity: shimmerOpacity,
+                },
+                style,
+            ]}
+        />
+    );
+
+    const ProfileInfoItemSkeleton = () => (
+        <View style={styles.infoItem}>
+            <SkeletonBox style={[styles.infoIconContainer, { backgroundColor: undefined }]} />
+            <View style={styles.infoContent}>
+                <SkeletonBox style={{ width: 80, height: 12, marginBottom: 6 }} />
+                <SkeletonBox style={{ width: 140, height: 16 }} />
+            </View>
+        </View>
+    );
+
+    const ProfileSkeleton = () => (
+        <>
+            {/* Avatar & Basic Info Skeleton */}
+            <View style={styles.profileSection}>
+                <View style={[styles.avatarContainer, { borderColor: isDark ? colorPalette.grey[900] : colors.white }]}>
+                    <SkeletonBox style={styles.avatar} />
                 </View>
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
+                <SkeletonBox style={{ width: 180, height: 24, marginBottom: 8 }} />
+                <SkeletonBox style={{ width: 140, height: 16, marginBottom: 8 }} />
+                <SkeletonBox style={{ width: 100, height: 14 }} />
+            </View>
+
+            <View style={styles.profileDivider} />
+
+            {/* Stats Row Skeleton */}
+            <View style={styles.statsRow}>
+                {[1, 2, 3].map((i) => (
+                    <React.Fragment key={i}>
+                        <View style={styles.statItem}>
+                            <SkeletonBox style={{ width: 40, height: 18, marginBottom: 6 }} />
+                            <SkeletonBox style={{ width: 50, height: 12 }} />
+                        </View>
+                        {i < 3 && <View style={styles.statDivider} />}
+                    </React.Fragment>
+                ))}
+            </View>
+
+            {/* Profile Information Skeleton */}
+            <View style={styles.infoSection}>
+                <SkeletonBox style={{ width: 180, height: 18, marginBottom: 8 }} />
+                <SkeletonBox style={{ width: 220, height: 12, marginBottom: 16 }} />
+                <View style={[styles.infoCard, { backgroundColor: isDark ? colorPalette.grey[800] : colors.white }]}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                        <React.Fragment key={i}>
+                            <ProfileInfoItemSkeleton />
+                            {i < 8 && <View style={[styles.infoDivider, { backgroundColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200] }]} />}
+                        </React.Fragment>
+                    ))}
                 </View>
             </View>
-        );
-    }
+        </>
+    );
 
     const profileInfo: ProfileInfoItem[] = [
         {
@@ -118,79 +210,112 @@ export const StudentProfileScreen = ({ onBack }: StudentProfileScreenProps) => {
     ];
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background, flex: 1 }]}>
-            {/* Header Section */}
-            <View
-                style={[
-                    styles.headerSection,
-                    {
-                        backgroundColor: colors.black,
-                        paddingTop: insets.top + layout.spacing.md,
-                    },
-                ]}
-            >
-                <View style={styles.headerContent}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={onBack}
-                        activeOpacity={0.7}
-                    >
-                        <Ionicons name="arrow-back" size={24} color={colors.white} />
-                    </TouchableOpacity>
-                    <Text style={[styles.headerTitle, { color: colors.white }]}>Profile</Text>
-                    <View style={styles.headerRight} />
-                </View>
-            </View>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* 1. Fixed Black Background for Header Area */}
+            <View style={[styles.headerBackground, { height: HEADER_HEIGHT, backgroundColor: colors.black }]} />
 
-            {/* Content Section */}
-            <View style={[styles.contentSection, {
-                backgroundColor: isDark ? colorPalette.grey[50] : colors.white
-            }]}>
-                <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={[
-                        styles.scrollContent,
-                        { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) },
+            {/* 2. Scrollable Content */}
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                bounces
+            >
+                {/* Spacer to push content down below header */}
+                <View style={{ height: HEADER_HEIGHT - SHEET_OVERLAP }} />
+
+                {/* White Sheet Container */}
+                <View
+                    style={[
+                        styles.whiteSheet,
+                        {
+                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                            minHeight: SCREEN_HEIGHT - (HEADER_HEIGHT - SHEET_OVERLAP),
+                        },
                     ]}
-                    showsVerticalScrollIndicator={false}
-                    bounces={true}
                 >
-                    {/* Avatar Section */}
-                    <View style={[styles.avatarSection, {
-                        backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                    }]}>
-                        <View style={[styles.avatarContainer, {
-                            backgroundColor: isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100],
-                        }]}>
-                            <Ionicons
-                                name="person"
-                                size={64}
-                                color={isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600]}
-                            />
+                    {isInitialLoad && !profile ? (
+                        <ProfileSkeleton />
+                    ) : (
+                        <>
+                    {/* Avatar & Basic Info */}
+                    <View style={styles.profileSection}>
+                        <View style={[styles.avatarContainer, { borderColor: isDark ? colorPalette.grey[900] : colors.white }]}>
+                            <View style={[styles.avatar, { backgroundColor: isDark ? colorPalette.frozenLake[900] : colorPalette.frozenLake[100] }]}>
+                                <Text style={[styles.avatarText, { color: isDark ? colorPalette.frozenLake[300] : colorPalette.frozenLake[600] }]}>
+                                    {profile?.full_name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'ST'}
+                                </Text>
+                            </View>
+                            {profile?.is_face_registered && (
+                                <View style={styles.verifiedBadge}>
+                                    <Ionicons name="checkmark" size={14} color={colors.white} />
+                                </View>
+                            )}
                         </View>
-                        <Text style={[styles.profileName, { color: colors.text.primary }]}>
+
+                        <Text style={[styles.studentName, { color: colors.text.primary }]}>
                             {profile?.full_name || 'Student'}
                         </Text>
-                        <Text style={[styles.profileEmail, { color: colors.text.secondary }]}>
-                            {profile?.email || 'No email available'}
+                        <Text style={[styles.studentRole, { color: colors.text.tertiary }]}>
+                            {profile?.department || 'Student'}
                         </Text>
+                        <View style={styles.locationRow}>
+                            <Ionicons name="id-card-outline" size={14} color={colors.text.tertiary} />
+                            <Text style={[styles.locationText, { color: colors.text.secondary }]}>
+                                {profile?.reg_number || 'No Reg Number'}
+                            </Text>
+                        </View>
                     </View>
 
+                    {/* Divider between header summary and details */}
+                    <View style={styles.profileDivider} />
+
+                    {/* Stats Row (simple) */}
+                    <View style={styles.statsRow}>
+                        <View style={styles.statItem}>
+                            <Text style={[styles.statValue, { color: colors.text.primary }]}>
+                                {profile?.level || '-'}
+                            </Text>
+                            <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Level</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={[styles.statValue, { color: colors.text.primary }]} numberOfLines={1} ellipsizeMode="tail">
+                                {profile?.faculty || '-'}
+                            </Text>
+                            <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Faculty</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={[styles.statValue, { color: colors.text.primary }]}>
+                                {profile?.is_face_registered ? 'Yes' : 'No'}
+                            </Text>
+                            <Text style={[styles.statLabel, { color: colors.text.secondary }]}>Face ID</Text>
+                        </View>
+                    </View>
 
                     {/* Profile Information */}
                     <View style={styles.infoSection}>
                         <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
                             Personal Information
                         </Text>
-                        <View style={[styles.infoCard, {
-                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                        }]}>
+                        <Text style={[styles.sectionSubtitle, { color: colors.text.secondary }]}>
+                            Basic details linked to your account
+                        </Text>
+                        <View
+                            style={[
+                                styles.infoCard,
+                                {
+                                    backgroundColor: isDark ? colorPalette.grey[800] : colors.white,
+                                },
+                            ]}
+                        >
                             {profileInfo.map((item, index) => {
                                 const itemColor = item.color ? colorPalette[item.color] : null;
                                 const hasColor = itemColor !== null;
 
                                 return (
-                                    <View key={index}>
+                                    <View key={item.label}>
                                         <View style={styles.infoItem}>
                                             <View style={[styles.infoIconContainer, {
                                                 backgroundColor: hasColor
@@ -233,13 +358,21 @@ export const StudentProfileScreen = ({ onBack }: StudentProfileScreenProps) => {
                     </View>
 
                     {/* Account Status */}
-                    <View style={styles.infoSection}>
+                    <View style={[styles.infoSection, styles.lastSection]}>
                         <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
                             Account Status
                         </Text>
-                        <View style={[styles.statusCard, {
-                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                        }]}>
+                        <Text style={[styles.sectionSubtitle, { color: colors.text.secondary }]}>
+                            Security and verification overview
+                        </Text>
+                        <View
+                            style={[
+                                styles.statusCard,
+                                {
+                                    backgroundColor: isDark ? colorPalette.grey[800] : colors.white,
+                                },
+                            ]}
+                        >
                             <View style={styles.statusItem}>
                                 <View style={[styles.statusIconContainer, {
                                     backgroundColor: profile?.is_face_registered
@@ -269,7 +402,20 @@ export const StudentProfileScreen = ({ onBack }: StudentProfileScreenProps) => {
                             </View>
                         </View>
                     </View>
-                </ScrollView>
+                        </>
+                    )}
+                </View>
+            </ScrollView>
+
+            {/* 3. Fixed Header Overlay (Back Button + Title) */}
+            <View style={[styles.fixedHeader, { paddingTop: insets.top + layout.spacing.md }]}>
+                <View style={styles.headerContent}>
+                    <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color={colors.white} />
+                    </TouchableOpacity>
+                    <Text style={[styles.headerTitle, { color: colors.white }]}>My Profile</Text>
+                    <View style={{ width: 40 }} />
+                </View>
             </View>
         </View>
     );
@@ -278,24 +424,27 @@ export const StudentProfileScreen = ({ onBack }: StudentProfileScreenProps) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        width: '100%',
-        height: '100%',
     },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+    headerBackground: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 0,
     },
-    headerSection: {
+    fixedHeader: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 10,
         paddingHorizontal: layout.spacing.xl,
-        paddingBottom: layout.spacing.xxl * 2,
-        overflow: 'hidden',
     },
     headerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: layout.spacing.md,
+        height: 44,
     },
     backButton: {
         width: 40,
@@ -304,66 +453,129 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
     },
     headerTitle: {
-        fontSize: 32,
+        fontSize: 18,
         fontFamily: 'Montserrat_700Bold',
-        flex: 1,
         textAlign: 'center',
-    },
-    headerRight: {
-        width: 40,
-    },
-    contentSection: {
         flex: 1,
-        marginTop: -35,
-        borderTopLeftRadius: 50,
-        borderTopRightRadius: 50,
-        overflow: 'hidden',
-        minHeight: 400,
+    },
+    centerContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     scrollView: {
         flex: 1,
+        zIndex: 1,
     },
     scrollContent: {
-        paddingHorizontal: layout.spacing.xl,
-        paddingTop: layout.spacing.xxl * 2,
+        flexGrow: 1,
     },
-    avatarSection: {
+    whiteSheet: {
+        borderTopLeftRadius: 40,
+        borderTopRightRadius: 40,
+        overflow: 'visible',
+    },
+    profileSection: {
         alignItems: 'center',
-        paddingVertical: layout.spacing.xxl,
-        paddingHorizontal: layout.spacing.lg,
-        marginBottom: layout.spacing.xl,
-        borderRadius: layout.borderRadius.lg,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
-        elevation: 2,
+        marginTop: -60,
+        marginBottom: layout.spacing.lg,
+    },
+    profileDivider: {
+        height: 1,
+        marginHorizontal: layout.spacing.xl,
+        marginBottom: layout.spacing.lg,
+        backgroundColor: '#E5E7EB',
     },
     avatarContainer: {
         width: 120,
         height: 120,
         borderRadius: 60,
+        borderWidth: 6,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: layout.spacing.md,
     },
-    profileName: {
+    avatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 60,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarText: {
+        fontSize: 40,
+        fontFamily: 'Montserrat_700Bold',
+    },
+    verifiedBadge: {
+        position: 'absolute',
+        bottom: 0,
+        right: 0,
+        backgroundColor: '#22c55e',
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+    },
+    studentName: {
         fontSize: 24,
         fontFamily: 'Montserrat_700Bold',
-        marginBottom: layout.spacing.xs,
+        marginBottom: 4,
         textAlign: 'center',
     },
-    profileEmail: {
-        fontSize: 14,
-        fontFamily: 'Montserrat_400Regular',
+    studentRole: {
+        fontSize: 16,
+        fontFamily: 'Montserrat_500Medium',
+        marginBottom: 8,
         textAlign: 'center',
+    },
+    locationRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    locationText: {
+        fontSize: 14,
+        fontFamily: 'Montserrat_500Medium',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        paddingHorizontal: layout.spacing.xxl,
+        marginBottom: layout.spacing.xl,
+    },
+    statItem: {
+        alignItems: 'center',
+    },
+    statValue: {
+        fontSize: 18,
+        fontFamily: 'Montserrat_700Bold',
+        marginBottom: 2,
+    },
+    statLabel: {
+        fontSize: 12,
+        fontFamily: 'Montserrat_500Medium',
+    },
+    statDivider: {
+        width: 1,
+        height: 24,
+        backgroundColor: '#E5E7EB',
     },
     infoSection: {
         marginBottom: layout.spacing.xl,
+        paddingHorizontal: layout.spacing.xl,
     },
     sectionTitle: {
         fontSize: 18,
         fontFamily: 'Montserrat_600SemiBold',
+        marginBottom: layout.spacing.xs,
+    },
+    sectionSubtitle: {
+        fontSize: 12,
+        fontFamily: 'Montserrat_500Medium',
         marginBottom: layout.spacing.md,
     },
     infoCard: {
@@ -371,8 +583,8 @@ const styles = StyleSheet.create({
         padding: layout.spacing.md,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
         elevation: 2,
     },
     infoItem: {
@@ -409,9 +621,12 @@ const styles = StyleSheet.create({
         padding: layout.spacing.md,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
         elevation: 2,
+    },
+    lastSection: {
+        paddingBottom: layout.spacing.xl,
     },
     statusItem: {
         flexDirection: 'row',

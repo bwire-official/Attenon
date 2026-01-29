@@ -15,54 +15,56 @@ interface InstructorForgotPasswordScreenProps {
 export const InstructorForgotPasswordScreen = ({ onBack, onCodeSent }: InstructorForgotPasswordScreenProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
-    const [emailOrStaffId, setEmailOrStaffId] = useState('');
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleSendCode = async () => {
-        if (!emailOrStaffId.trim()) {
-            setError('Please enter your email address or staff ID');
+        if (!email.trim()) {
+            setError('Please enter your email address');
             return;
         }
 
-        // Check if it's an email
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const isEmail = emailRegex.test(emailOrStaffId.trim());
+        if (!emailRegex.test(email.trim())) {
+            setError('Please enter a valid email address');
+            return;
+        }
 
-        if (isEmail) {
-            setLoading(true);
-            setError(null);
+        setLoading(true);
+        setError(null);
 
-            const result = await resetPassword(emailOrStaffId.trim());
-
-            setLoading(false);
-
+        try {
+            const result = await resetPassword(email.trim());
             if (result.success) {
                 // Navigate directly to code verification screen
-                onCodeSent?.(emailOrStaffId.trim());
+                onCodeSent?.(email.trim());
             } else {
                 setError(result.error || 'Failed to send reset code. Please try again.');
             }
-        } else {
-            setError('Please enter a valid email address');
+        } catch (err) {
+            setError('An unexpected error occurred. Please try again.');
+            console.error(err);
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
         <View style={styles.container}>
             {/* Header Section */}
-            <View style={[styles.headerSection, { 
+            <View style={[styles.headerSection, {
                 backgroundColor: colors.black,
-                paddingTop: insets.top + layout.spacing.md 
+                paddingTop: insets.top + layout.spacing.md
             }]}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     onPress={onBack}
                     style={styles.backButton}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="arrow-back" 
-                        size={24} 
+                    <Ionicons
+                        name="arrow-back"
+                        size={24}
                         color={colors.white}
                     />
                 </TouchableOpacity>
@@ -77,7 +79,7 @@ export const InstructorForgotPasswordScreen = ({ onBack, onCodeSent }: Instructo
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={[styles.formSection, { backgroundColor: colors.white }]}
             >
-                <ScrollView 
+                <ScrollView
                     contentContainerStyle={[
                         styles.formContent,
                         { paddingBottom: Math.max(insets.bottom, layout.spacing.xl) }
@@ -88,10 +90,10 @@ export const InstructorForgotPasswordScreen = ({ onBack, onCodeSent }: Instructo
                     {/* Error Message */}
                     {error && (
                         <View style={[styles.errorContainer, { backgroundColor: '#fee' }]}>
-                            <Ionicons 
-                                name="alert-circle" 
-                                size={20} 
-                                color="#c33" 
+                            <Ionicons
+                                name="alert-circle"
+                                size={20}
+                                color="#c33"
                             />
                             <Text style={[styles.errorText, { color: '#c33' }]}>
                                 {error}
@@ -103,17 +105,17 @@ export const InstructorForgotPasswordScreen = ({ onBack, onCodeSent }: Instructo
                         Enter your email address and we'll send you a code to reset your password
                     </Text>
 
-                    {/* Email/Staff ID Input */}
+                    {/* Email Input */}
                     <View style={styles.inputGroup}>
                         <Text style={[styles.inputLabel, { color: colorPalette.grey[700] }]}>Email Address</Text>
                         <TextInput
-                            style={[styles.textInput, { 
+                            style={[styles.textInput, {
                                 color: colorPalette.grey[900],
                                 borderBottomColor: colorPalette.grey[300],
                             }]}
-                            value={emailOrStaffId}
+                            value={email}
                             onChangeText={(text) => {
-                                setEmailOrStaffId(text);
+                                setEmail(text);
                                 setError(null);
                             }}
                             placeholder="Enter your email"
@@ -126,12 +128,12 @@ export const InstructorForgotPasswordScreen = ({ onBack, onCodeSent }: Instructo
 
                     {/* Send Reset Link Button */}
                     <TouchableOpacity
-                        style={[styles.sendButton, { 
+                        style={[styles.sendButton, {
                             backgroundColor: colors.black,
-                            opacity: (!emailOrStaffId.trim() || loading) ? 0.5 : 1,
+                            opacity: (!email.trim() || loading) ? 0.5 : 1,
                         }]}
                         onPress={handleSendCode}
-                        disabled={!emailOrStaffId.trim() || loading}
+                        disabled={!email.trim() || loading}
                         activeOpacity={0.8}
                     >
                         {loading ? (

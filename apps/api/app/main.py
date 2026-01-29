@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.api.routes import face
+from app.api.routes import face, attendance
 
 # Configure logging
 logging.basicConfig(
@@ -72,6 +72,9 @@ async def read_root():
 
 # Face recognition endpoints (main purpose of this API)
 app.include_router(face.router, tags=["Face Recognition"])
+
+# Attendance endpoints
+app.include_router(attendance.router, prefix="/attendance", tags=["Attendance"])
 
 
 if __name__ == "__main__":

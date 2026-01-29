@@ -31,9 +31,19 @@ import { MyScheduleScreen } from './src/screens/MyScheduleScreen';
 import { PINSetupScreen } from './src/screens/PINSetupScreen';
 import { AppUnlockScreen } from './src/screens/AppUnlockScreen';
 import { FaceAttendanceScreen } from './src/screens/FaceAttendanceScreen';
+import { StudentCoursesScreen } from './src/screens/StudentCoursesScreen';
+import { StudentSelfAttendanceScreen } from './src/screens/StudentSelfAttendanceScreen';
+import { LiveSessionScreen } from './src/screens/LiveSessionScreen';
 import { initializeSession, onSessionChange, getCurrentUser } from './src/services/session';
 import { shouldShowLockScreen, setAppLocked, hasPIN } from './src/services/security';
 import { AppState, Platform } from 'react-native';
+import {
+  registerForPushNotifications,
+  addNotificationResponseListener,
+  getLastNotificationResponse,
+} from './src/services/push-notifications';
+import { supabase } from './src/lib/supabase';
+import { CustomAlert } from './src/components/CustomAlert';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -52,8 +62,11 @@ export default function App() {
   const [studentResetEmail, setStudentResetEmail] = useState('');
   const [studentVerifyEmail, setStudentVerifyEmail] = useState('');
   const [showUnlockScreen, setShowUnlockScreen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState('');
 
   const [selectedClassForAttendance, setSelectedClassForAttendance] = useState(null);
+  const [selfAttendanceSession, setSelfAttendanceSession] = useState(null); // { sessionId, courseName }
+  const [inAppAlert, setInAppAlert] = useState({ visible: false, title: '', message: '', session: null });
 
   // Refs to track current screen and navigation state without triggering re-renders
   const currentScreenRef = useRef(currentScreen);
@@ -85,7 +98,7 @@ export default function App() {
       'student-verify-code': ['student-reset-password'],
       'instructor-forgot-password': ['instructor-verify-code'],
       'instructor-verify-code': ['instructor-reset-password'],
-      'student': ['student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-setup'],
+      'student': ['student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-setup', 'student-courses', 'self-attendance'],
       'student-settings': ['pin-setup'],
       'instructor': ['notifications'],
       'face-attendance': ['my-schedule'],
@@ -103,6 +116,7 @@ export default function App() {
       'attendance-history': ['student'],
       'my-schedule': ['student'],
       'face-setup': ['student'],
+      'student-courses': ['student'],
       'pin-setup': ['student-settings'],
       'notifications': ['instructor'],
       'student-verify-email': ['login'],
@@ -134,6 +148,7 @@ export default function App() {
 
         if (state.isAuthenticated && state.user) {
           setUserRole(state.user.role);
+          setCurrentUserId(state.user.id);
 
           if (Platform.OS === 'web') {
             navigateToScreen(state.user.role === 'instructor' ? 'instructor' : 'student');
@@ -167,9 +182,11 @@ export default function App() {
       if (!isAuthenticated) {
         navigateToScreen('login');
         setUserRole('student');
+        setCurrentUserId('');
       } else if (user && currentScreen === 'login') {
         // Only auto-navigate from login screen to dashboard if listener picks up a new session
         setUserRole(user.role);
+        setCurrentUserId(user.id);
         navigateToScreen(user.role === 'instructor' ? 'instructor' : 'student');
       }
     });
@@ -179,6 +196,82 @@ export default function App() {
       subscription?.unsubscribe();
     };
   }, [fontsLoaded]);
+
+  // Push notifications: register token and handle deep links
+  useEffect(() => {
+    if (sessionLoading || currentScreen === 'splash' || currentScreen === 'login') return;
+    // Only register for students (they receive attendance notifications)
+    if (userRole !== 'student') return;
+
+    // Register for push notifications
+    registerForPushNotifications();
+
+    // Check if app was launched from notification
+    getLastNotificationResponse().then((data) => {
+      if (data) {
+        handleNavigateToSelfAttendance(data.sessionId, data.courseName);
+      }
+    });
+
+    // Listen for notification taps while app is running
+    const cleanup = addNotificationResponseListener((data) => {
+      handleNavigateToSelfAttendance(data.sessionId, data.courseName);
+    });
+
+    return cleanup;
+  }, [sessionLoading, userRole, currentScreen]);
+
+  // Global In-App Notifications (Supabase Realtime)
+  useEffect(() => {
+    if (sessionLoading || !fontsLoaded) return;
+
+    let channel = null;
+
+    const setupInAppListener = async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!user) return;
+
+        // Subscribe to new notifications for this user
+        channel = supabase
+          .channel(`global-notifications-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${user.id}`
+            },
+            async (payload) => {
+              const notification = payload.new;
+
+              // Only show immediate alert for new attendance sessions
+              if (notification.type === 'attendance_session_started') {
+                setInAppAlert({
+                  visible: true,
+                  title: notification.title,
+                  message: notification.message,
+                  session: notification.data
+                });
+              }
+              // We could also show toast notifications for other types here
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.error('Error setting up in-app listener:', err);
+      }
+    };
+
+    setupInAppListener();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [sessionLoading, fontsLoaded]);
 
   // Handle app state changes (background/foreground) - skip on web
   // Uses refs instead of state to avoid re-subscribing on every navigation
@@ -247,6 +340,7 @@ export default function App() {
         'attendance-history': 'student',
         'my-schedule': 'student',
         'face-setup': 'student',
+        'student-courses': 'student',
         'pin-setup': 'student-settings',
         'notifications': userRole === 'instructor' ? 'instructor' : 'student',
         'forgot-password': 'login',
@@ -329,6 +423,14 @@ export default function App() {
   };
 
   const handleBackFromSchedule = () => {
+    navigateToScreen('student');
+  };
+
+  const handleNavigateToStudentCourses = () => {
+    navigateToScreen('student-courses');
+  };
+
+  const handleBackFromStudentCourses = () => {
     navigateToScreen('student');
   };
 
@@ -459,9 +561,32 @@ export default function App() {
     setSelectedClassForAttendance(null);
   };
 
+  const handleBackFromLiveSession = () => {
+    navigateToScreen('instructor');
+  };
+
   const handleFaceAttendanceComplete = () => {
     navigateToScreen('my-schedule');
     setSelectedClassForAttendance(null);
+  };
+
+  const handleNavigateToSelfAttendance = (sessionId, courseName) => {
+    setSelfAttendanceSession({ sessionId, courseName });
+    navigateToScreen('self-attendance');
+  };
+
+  const handleSelfAttendanceBack = () => {
+    navigateToScreen('student');
+    setSelfAttendanceSession(null);
+  };
+
+  const handleSelfAttendanceComplete = () => {
+    navigateToScreen('student');
+    setSelfAttendanceSession(null);
+  };
+
+  const handleNavigateToLiveSession = () => {
+    navigateToScreen('live-session');
   };
 
   const renderScreen = (screen) => {
@@ -550,7 +675,10 @@ export default function App() {
       case 'instructor':
         return (
           <AnimatedScreen key="instructor" isActive={currentScreen === 'instructor'} direction={direction}>
-            <InstructorDashboard onNavigateToNotifications={handleNavigateToNotifications} />
+            <InstructorDashboard
+              onNavigateToNotifications={handleNavigateToNotifications}
+              onNavigateToLiveSession={handleNavigateToLiveSession}
+            />
           </AnimatedScreen>
         );
       case 'student':
@@ -563,6 +691,8 @@ export default function App() {
               onNavigateToProfile={handleNavigateToStudentProfile}
               onNavigateToAttendanceHistory={handleNavigateToAttendanceHistory}
               onNavigateToSchedule={handleNavigateToSchedule}
+              onNavigateToAllCourses={handleNavigateToStudentCourses}
+              onNavigateToSelfAttendance={handleNavigateToSelfAttendance}
             />
           </AnimatedScreen>
         );
@@ -600,6 +730,25 @@ export default function App() {
             <MyScheduleScreen
               onBack={handleBackFromSchedule}
               onNavigateToFaceAttendance={handleNavigateToFaceAttendance}
+            />
+          </AnimatedScreen>
+        );
+      case 'student-courses':
+        return (
+          <AnimatedScreen key="student-courses" isActive={currentScreen === 'student-courses'} direction={direction}>
+            <StudentCoursesScreen
+              onBack={handleBackFromStudentCourses}
+            />
+          </AnimatedScreen>
+        );
+      case 'self-attendance':
+        return (
+          <AnimatedScreen key="self-attendance" isActive={currentScreen === 'self-attendance'} direction={direction}>
+            <StudentSelfAttendanceScreen
+              sessionId={selfAttendanceSession?.sessionId || ''}
+              courseName={selfAttendanceSession?.courseName}
+              onBack={handleSelfAttendanceBack}
+              onComplete={handleSelfAttendanceComplete}
             />
           </AnimatedScreen>
         );
@@ -645,6 +794,15 @@ export default function App() {
             />
           </AnimatedScreen>
         );
+      case 'live-session':
+        return (
+          <AnimatedScreen key="live-session" isActive={currentScreen === 'live-session'} direction={direction}>
+            <LiveSessionScreen
+              onBack={handleBackFromLiveSession}
+              instructorId={currentUserId || ''}
+            />
+          </AnimatedScreen>
+        );
       default:
         return (
           <AnimatedScreen key="login-default" isActive={currentScreen === 'login'} direction="forward">
@@ -654,7 +812,7 @@ export default function App() {
     }
   };
 
-  const allScreens = ['splash', 'login', 'forgot-password', 'student-verify-code', 'student-reset-password', 'student-verify-email', 'instructor-forgot-password', 'instructor-verify-code', 'instructor-reset-password', 'instructor', 'student', 'student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-attendance', 'notifications', 'face-setup', 'pin-setup', 'app-unlock'];
+  const allScreens = ['splash', 'login', 'forgot-password', 'student-verify-code', 'student-reset-password', 'student-verify-email', 'instructor-forgot-password', 'instructor-verify-code', 'instructor-reset-password', 'instructor', 'student', 'student-settings', 'student-profile', 'attendance-history', 'my-schedule', 'face-attendance', 'notifications', 'face-setup', 'pin-setup', 'app-unlock', 'student-courses', 'self-attendance', 'live-session'];
 
   return (
     <SafeAreaProvider initialSafeAreaInsets={{ top: 0, bottom: 0, left: 0, right: 0 }}>
@@ -672,6 +830,25 @@ export default function App() {
           })
         )}
       </React.Fragment>
+      <CustomAlert
+        visible={inAppAlert.visible}
+        title={inAppAlert.title}
+        message={inAppAlert.message}
+        onClose={() => setInAppAlert({ ...inAppAlert, visible: false })}
+        icon="notifications-outline"
+        actions={[
+          { text: 'Later', style: 'cancel' },
+          {
+            text: 'Verify Now',
+            onPress: () => {
+              if (inAppAlert.session && inAppAlert.session.sessionId) {
+                handleNavigateToSelfAttendance(inAppAlert.session.sessionId, inAppAlert.session.courseName);
+              }
+              setInAppAlert({ ...inAppAlert, visible: false }); // Dismiss alert after action
+            }
+          }
+        ]}
+      />
       <StatusBar style="light" />
     </SafeAreaProvider>
   );

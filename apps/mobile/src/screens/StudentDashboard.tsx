@@ -1,13 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, useWindowDimensions, RefreshControl, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../theme/useTheme';
 import { colorPalette } from '../theme/colors';
 import { layout } from '../theme/layout';
 import { getCurrentUser } from '../services/session';
 import { getStudentAttendance, getStudentClasses, getStudentStats } from '../services/data';
 import type { Profile, AttendanceLog } from '../lib/supabase';
+import { usePendingAttendance } from '../hooks/usePendingAttendance';
+import { useNotifications } from '../hooks/useNotifications';
+import { AttendanceApi } from '../services/attendance-api';
+
+const CACHE_KEY_DASHBOARD = '@student_dashboard_data';
 
 const GRID_GAP = layout.spacing.md;
 
@@ -19,6 +25,7 @@ interface StudentDashboardProps {
     onNavigateToAttendanceHistory?: () => void;
     onNavigateToSchedule?: () => void;
     onNavigateToAllCourses?: () => void;
+    onNavigateToSelfAttendance?: (sessionId: string, courseName: string) => void;
     isActive?: boolean;
 }
 
@@ -29,30 +36,80 @@ interface AttendanceWithClass extends AttendanceLog {
     } | null;
 }
 
-export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettings, onNavigateToFaceSetup, onNavigateToProfile, onNavigateToAttendanceHistory, onNavigateToSchedule, onNavigateToAllCourses, isActive }: StudentDashboardProps) => {
+export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettings, onNavigateToFaceSetup, onNavigateToProfile, onNavigateToAttendanceHistory, onNavigateToSchedule, onNavigateToAllCourses, onNavigateToSelfAttendance, isActive }: StudentDashboardProps) => {
     const { colors, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const { width: SCREEN_WIDTH } = useWindowDimensions();
+    const shimmerAnimation = useRef(new Animated.Value(0)).current;
     const [userProfile, setUserProfile] = useState<Profile | null>(null);
     const [loadingProfile, setLoadingProfile] = useState(true);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [recentAttendance, setRecentAttendance] = useState<AttendanceWithClass[]>([]);
     const [loadingAttendance, setLoadingAttendance] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [notificationCount, setNotificationCount] = useState(0);
 
     // Summary Stats State
     const [totalCourses, setTotalCourses] = useState(0);
     const [overallAttendance, setOverallAttendance] = useState(0);
     const [todayClasses, setTodayClasses] = useState(0);
 
-    const initializeDashboard = async (isManualRefresh = false) => {
-        if (!isActive && !isManualRefresh) return;
+    // Pending attendance sessions (Supabase Realtime - no polling)
+    const { pendingSessions, formatTimeRemaining, hasPending } = usePendingAttendance(userProfile?.id || null);
 
+    // Real notifications (Supabase Realtime)
+    const { unreadCount: notificationCount } = useNotifications(userProfile?.id || null);
+
+    useEffect(() => {
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(shimmerAnimation, {
+                    toValue: 1,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(shimmerAnimation, {
+                    toValue: 0,
+                    duration: 1500,
+                    useNativeDriver: true,
+                }),
+            ])
+        ).start();
+    }, []);
+
+    const shimmerOpacity = shimmerAnimation.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.3, 0.7],
+    });
+
+    const loadCachedData = async () => {
+        try {
+            // Try to get user first to use user-specific cache key
+            const currentUser = await getCurrentUser();
+            const cacheKey = currentUser ? `${CACHE_KEY_DASHBOARD}_${currentUser.id}` : CACHE_KEY_DASHBOARD;
+            const cachedData = await AsyncStorage.getItem(cacheKey);
+            if (cachedData) {
+                const parsed = JSON.parse(cachedData);
+                setUserProfile(parsed.userProfile);
+                setRecentAttendance(parsed.recentAttendance || []);
+                setTotalCourses(parsed.totalCourses || 0);
+                setOverallAttendance(parsed.overallAttendance || 0);
+                setTodayClasses(parsed.todayClasses || 0);
+                setLoadingProfile(false);
+                setLoadingAttendance(false);
+                setIsInitialLoad(false);
+            }
+            initializeDashboard();
+        } catch (error) {
+            console.error('Error loading cached dashboard:', error);
+            initializeDashboard();
+        }
+    };
+
+    const initializeDashboard = async (isManualRefresh = false) => {
         try {
             if (isManualRefresh) {
                 setRefreshing(true);
-            } else if (!userProfile) {
-                // Only show skeleton if we don't have a profile yet and it's not a manual refresh
+            } else if (!userProfile && isInitialLoad) {
                 setLoadingProfile(true);
                 setLoadingAttendance(true);
             }
@@ -61,23 +118,54 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
             setUserProfile(profile);
 
             if (profile) {
-                // Fetch stats concurrently
-                const [attendance, classes, stats] = await Promise.all([
+                // First, get the classes to know which expired sessions to process
+                const classes = await getStudentClasses(profile.id);
+                const classIds = classes.map(c => c.id);
+
+                // Process any expired sessions to ensure THIS student's absent records are created
+                // Pass the student's ID so it only marks THEM as absent (RLS prevents marking others)
+                if (classIds.length > 0) {
+                    await AttendanceApi.processExpiredSessions(classIds, profile.id);
+                }
+
+                // Now fetch attendance and stats (will include any newly created absent records)
+                const [attendance, stats] = await Promise.all([
                     getStudentAttendance(profile.id),
-                    getStudentClasses(profile.id),
                     getStudentStats(profile.id)
                 ]);
 
-                setRecentAttendance((attendance as AttendanceWithClass[]).slice(0, 3));
-                setTotalCourses(classes.length);
-                setOverallAttendance(Math.round(stats.percentage));
+                const recentAtt = (attendance as AttendanceWithClass[]).slice(0, 3);
+                const coursesCount = classes.length;
+                const attPercentage = Math.round(stats.percentage);
 
                 // Calculate today's classes
                 const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
                 const forToday = classes.filter(c =>
                     c.schedule && c.schedule.toLowerCase().includes(today.toLowerCase())
                 ).length;
+
+                setRecentAttendance(recentAtt);
+                setTotalCourses(coursesCount);
+                setOverallAttendance(attPercentage);
                 setTodayClasses(forToday);
+
+                // Cache the dashboard data with user-specific key (exclude sensitive fields like face_encoding)
+                const cacheKey = `${CACHE_KEY_DASHBOARD}_${profile.id}`;
+                const safeProfile = {
+                    id: profile.id,
+                    full_name: profile.full_name,
+                    email: profile.email,
+                    role: profile.role,
+                    avatar_url: profile.avatar_url,
+                    is_face_registered: profile.is_face_registered,
+                };
+                await AsyncStorage.setItem(cacheKey, JSON.stringify({
+                    userProfile: safeProfile,
+                    recentAttendance: recentAtt,
+                    totalCourses: coursesCount,
+                    overallAttendance: attPercentage,
+                    todayClasses: forToday,
+                }));
             }
         } catch (error) {
             console.error('Error initializing dashboard:', error);
@@ -85,18 +173,13 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
             setLoadingProfile(false);
             setLoadingAttendance(false);
             setRefreshing(false);
+            setIsInitialLoad(false);
         }
     };
 
     useEffect(() => {
-        initializeDashboard();
-
-        // Refresh when component might have been in background/previous state
-        // In this custom navigation, we can use a small hack or simply rely on the fact that
-        // App.js renders screens based on currentScreen.
-
-        setNotificationCount(3);
-    }, [isActive]);
+        loadCachedData();
+    }, []);
 
     const onRefresh = () => {
         initializeDashboard(true);
@@ -131,10 +214,10 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
     }> = [
             { id: '1', icon: 'calendar-outline', label: 'My Schedule', onPress: () => { onNavigateToSchedule?.(); }, color: 'frozenLake' },
             { id: '2', icon: 'bar-chart-outline', label: 'Attendance & Stats', onPress: () => { onNavigateToAttendanceHistory?.(); }, color: 'inkBlack' },
-            { id: '4', icon: 'library-outline', label: 'Available Courses', onPress: () => { onNavigateToAllCourses?.(); }, color: 'frozenLake' },
-            { id: '6', icon: 'person-outline', label: 'Profile', onPress: () => { onNavigateToProfile?.(); }, color: 'yellowGreen' },
+            { id: '4', icon: 'library-outline', label: 'My Courses', onPress: () => { onNavigateToAllCourses?.(); }, color: 'frozenLake' },
+            { id: '6', icon: 'person-outline', label: 'Profile', onPress: () => { onNavigateToProfile?.(); }, color: 'frozenLake' },
             { id: '7', icon: 'settings-outline', label: 'Settings', onPress: () => { onNavigateToSettings?.(); }, color: 'inkBlack' },
-            { id: '8', icon: 'help-circle-outline', label: 'Help & Support', onPress: () => { }, color: 'yellowGreen' },
+            { id: '8', icon: 'help-circle-outline', label: 'Help & Support', onPress: () => { }, color: 'frozenLake' },
         ];
 
 
@@ -216,6 +299,42 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
 
     const displayName = getFirstName(userProfile?.full_name);
 
+    const SkeletonBox = ({ style }: { style?: any }) => (
+        <Animated.View
+            style={[
+                {
+                    backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                    borderRadius: 8,
+                    opacity: shimmerOpacity,
+                },
+                style,
+            ]}
+        />
+    );
+
+    const ActivityItemSkeleton = () => (
+        <View style={[styles.historyItem, {
+            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+        }]}>
+            <View style={styles.historyLeft}>
+                <SkeletonBox style={styles.historyIconContainer} />
+                <View style={styles.historyInfo}>
+                    <SkeletonBox style={{ width: 100, height: 14, marginBottom: 6 }} />
+                    <SkeletonBox style={{ width: 150, height: 12 }} />
+                </View>
+            </View>
+            <SkeletonBox style={{ width: 60, height: 28, borderRadius: 14 }} />
+        </View>
+    );
+
+    const RecentActivitySkeleton = () => (
+        <View style={styles.historyList}>
+            {[1, 2, 3].map((i) => (
+                <ActivityItemSkeleton key={i} />
+            ))}
+        </View>
+    );
+
     return (
         <ScrollView
             style={[styles.container, { backgroundColor: colors.black }]}
@@ -247,13 +366,14 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                                 {getGreeting()}
                             </Text>
                         </View>
-                        {loadingProfile ? (
-                            <View style={{
+                        {loadingProfile && isInitialLoad ? (
+                            <Animated.View style={{
                                 width: 180,
                                 height: 32,
                                 backgroundColor: 'rgba(255,255,255,0.2)',
                                 borderRadius: 8,
-                                marginTop: 4
+                                marginTop: 4,
+                                opacity: shimmerOpacity,
                             }} />
                         ) : (
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -281,7 +401,7 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                             color={colors.white}
                         />
                         {notificationCount > 0 && (
-                            <View style={[styles.notificationBadge, { backgroundColor: '#EF4444' }]}>
+                            <View style={[styles.notificationBadge, { backgroundColor: '#EF4444', borderColor: isDark ? colorPalette.grey[900] : colors.primary }]}>
                                 <Text style={[styles.badgeText, { color: colors.white }]}>{notificationCount}</Text>
                             </View>
                         )}
@@ -289,10 +409,31 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                 </View>
 
                 {/* Quick Stats or Face Verification Button */}
-                {loadingProfile ? (
-                    <View style={styles.headerStatsPlaceholder}>
-                        <View style={[styles.placeholderLine, { width: '80%' }]} />
-                        <View style={[styles.placeholderLine, { width: '60%' }]} />
+                {loadingProfile && isInitialLoad ? (
+                    <View style={styles.headerStats}>
+                        {[1, 2, 3].map((i) => (
+                            <View key={i} style={styles.headerStatItem}>
+                                <Animated.View style={[styles.headerStatIcon, {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                                    opacity: shimmerOpacity,
+                                }]} />
+                                <Animated.View style={{
+                                    width: 40,
+                                    height: 28,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    borderRadius: 6,
+                                    marginBottom: layout.spacing.xs,
+                                    opacity: shimmerOpacity,
+                                }} />
+                                <Animated.View style={{
+                                    width: 55,
+                                    height: 12,
+                                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                    borderRadius: 4,
+                                    opacity: shimmerOpacity,
+                                }} />
+                            </View>
+                        ))}
                     </View>
                 ) : userProfile?.is_face_registered ? (
                     <View style={styles.headerStats}>
@@ -376,6 +517,35 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                 )}
             </View>
 
+            {/* Pending Attendance Banner (Realtime subscription) */}
+            {hasPending && pendingSessions.length > 0 && (
+                <View style={styles.pendingBannerContainer}>
+                    {pendingSessions.map((session) => (
+                        <TouchableOpacity
+                            key={session.id}
+                            style={[styles.pendingBanner, { backgroundColor: colorPalette.frozenLake[500] }]}
+                            onPress={() => onNavigateToSelfAttendance?.(session.id, session.course_title)}
+                            activeOpacity={0.9}
+                        >
+                            <View style={styles.pendingBannerContent}>
+                                <View style={styles.pendingBannerInfo}>
+                                    <Ionicons name="scan" size={24} color="#fff" />
+                                    <View style={styles.pendingBannerText}>
+                                        <Text style={styles.pendingBannerTitle}>Mark Attendance Now</Text>
+                                        <Text style={styles.pendingBannerCourse}>
+                                            {session.course_code} - {session.course_title}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <View style={styles.pendingBannerTimer}>
+                                    <Text style={styles.pendingTimerText}>{formatTimeRemaining(session.id)}</Text>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+
             {/* Content Section */}
             <View style={[
                 styles.contentSection,
@@ -406,15 +576,43 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                 }]}>Recent Activity</Text>
 
                 <View style={styles.historyList}>
-                    {loadingAttendance ? (
-                        <View style={[styles.historyItem, {
-                            backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            paddingVertical: layout.spacing.xl,
-                        }]}>
-                            <Text style={{ color: colors.text.secondary }}>Loading...</Text>
-                        </View>
+                    {loadingAttendance && isInitialLoad ? (
+                        <>
+                            {[1, 2, 3].map((i) => (
+                                <Animated.View key={i} style={[styles.historyItem, {
+                                    backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
+                                }]}>
+                                    <Animated.View style={[styles.historyIconContainer, {
+                                        backgroundColor: isDark ? colorPalette.grey[800] : colorPalette.grey[200],
+                                        opacity: shimmerOpacity,
+                                    }]} />
+                                    <View style={[styles.historyInfo, { flex: 1 }]}>
+                                        <Animated.View style={{
+                                            width: 100,
+                                            height: 14,
+                                            backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                                            borderRadius: 6,
+                                            marginBottom: 6,
+                                            opacity: shimmerOpacity,
+                                        }} />
+                                        <Animated.View style={{
+                                            width: 150,
+                                            height: 12,
+                                            backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                                            borderRadius: 6,
+                                            opacity: shimmerOpacity,
+                                        }} />
+                                    </View>
+                                    <Animated.View style={{
+                                        width: 60,
+                                        height: 28,
+                                        backgroundColor: isDark ? colorPalette.grey[700] : colorPalette.grey[200],
+                                        borderRadius: 14,
+                                        opacity: shimmerOpacity,
+                                    }} />
+                                </Animated.View>
+                            ))}
+                        </>
                     ) : recentAttendance.length === 0 ? (
                         <View style={[styles.historyItem, {
                             backgroundColor: isDark ? colorPalette.grey[900] : colors.white,
@@ -437,14 +635,14 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                                     <View style={styles.historyLeft}>
                                         <View style={[styles.historyIconContainer, {
                                             backgroundColor: isPresent || isLate
-                                                ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
+                                                ? (isDark ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.1)')
                                                 : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
                                         }]}>
                                             <Ionicons
                                                 name={isPresent ? 'checkmark-circle' : isLate ? 'time' : 'close-circle'}
                                                 size={20}
                                                 color={isPresent || isLate
-                                                    ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
+                                                    ? '#22C55E'
                                                     : colors.text.secondary}
                                             />
                                         </View>
@@ -461,7 +659,7 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                                         styles.statusBadge,
                                         {
                                             backgroundColor: isPresent || isLate
-                                                ? (isDark ? colorPalette.yellowGreen[900] : colorPalette.yellowGreen[100])
+                                                ? (isDark ? 'rgba(34, 197, 94, 0.2)' : 'rgba(34, 197, 94, 0.1)')
                                                 : (isDark ? colorPalette.grey[800] : colorPalette.grey[200]),
                                         }
                                     ]}>
@@ -469,7 +667,7 @@ export const StudentDashboard = ({ onNavigateToNotifications, onNavigateToSettin
                                             styles.statusText,
                                             {
                                                 color: isPresent || isLate
-                                                    ? (isDark ? colorPalette.yellowGreen[300] : colorPalette.yellowGreen[600])
+                                                    ? '#22C55E'
                                                     : colors.text.secondary,
                                             }
                                         ]}>
@@ -585,14 +783,16 @@ const styles = StyleSheet.create({
     },
     notificationBadge: {
         position: 'absolute',
-        top: 6,
-        right: 6,
+        top: -2,
+        right: -2,
         minWidth: 18,
         height: 18,
         borderRadius: 9,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 4,
+        borderWidth: 1.5,
+        borderColor: '#fff',
     },
     badgeText: {
         fontSize: 10,
@@ -699,7 +899,7 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 18,
-        backgroundColor: colorPalette.yellowGreen[600],
+        backgroundColor: '#22C55E',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -776,5 +976,52 @@ const styles = StyleSheet.create({
         height: 12,
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
         borderRadius: 6,
+    },
+    pendingBannerContainer: {
+        marginHorizontal: layout.spacing.xl,
+        marginTop: -layout.spacing.lg,
+        marginBottom: layout.spacing.md,
+        gap: layout.spacing.sm,
+    },
+    pendingBanner: {
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
+    pendingBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: layout.spacing.md,
+    },
+    pendingBannerInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        gap: layout.spacing.sm,
+    },
+    pendingBannerText: {
+        flex: 1,
+    },
+    pendingBannerTitle: {
+        fontFamily: 'Montserrat_700Bold',
+        fontSize: 14,
+        color: '#fff',
+    },
+    pendingBannerCourse: {
+        fontFamily: 'Montserrat_500Medium',
+        fontSize: 11,
+        color: 'rgba(255,255,255,0.85)',
+        marginTop: 2,
+    },
+    pendingBannerTimer: {
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
+    },
+    pendingTimerText: {
+        fontFamily: 'Montserrat_700Bold',
+        fontSize: 18,
+        color: '#fff',
     },
 });

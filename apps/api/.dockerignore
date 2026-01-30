@@ -1,0 +1,42 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Local development files
+.env
+.env.local
+*.log
+
+# Node.js (dev helper)
+node_modules/
+dev.js
+package.json
+package-lock.json
+
+# Railway/Nixpacks config (not needed in container)
+railway.json
+nixpacks.toml
+
+# Tests
+test_*.py
+debug_*.py
+
+# Documentation
+*.md

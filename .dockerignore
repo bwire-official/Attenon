@@ -1,0 +1,50 @@
+# Node modules
+node_modules/
+**/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Mobile app (not needed for API)
+apps/mobile/
+android/
+
+# Student portal (not needed for API)
+apps/student-portal/
+
+# Python cache
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# Virtual environments
+**/venv/
+**/.venv/
+
+# IDE
+.idea/
+.vscode/
+**/*.swp
+
+# Local env files
+**/.env
+**/.env.local
+
+# Logs
+**/*.log
+
+# Documentation
+docs/
+**/*.md
+
+# Test files
+**/test_*.py
+**/debug_*.py
+
+# Packages (shared libs not needed)
+packages/
+
+# Lock files
+pnpm-lock.yaml
+package-lock.json

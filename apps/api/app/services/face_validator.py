@@ -1,6 +1,6 @@
 """Face validation using OpenCV - highly reliable fallback."""
 import cv2
-import numpy as np
+import numpy as np 
 import os
 from typing import Dict
 

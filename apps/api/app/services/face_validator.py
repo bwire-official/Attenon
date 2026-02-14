@@ -4,7 +4,7 @@ import numpy as np
 import os
 from typing import Dict
 
-class FaceValidator:
+class FaceValidator: 
     """Real-time face validation using OpenCV Haarcascades."""
     
     def __init__(self):
